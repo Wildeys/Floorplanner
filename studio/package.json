@@ -7,7 +7,9 @@
     "build": "npm run typecheck && next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "node scripts/typecheck.mjs"
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "emit:calibration": "node --experimental-strip-types scripts/emit-calibration-sheet.ts"
   },
   "dependencies": {
     "@pascal-app/core": "^1.0.3",
