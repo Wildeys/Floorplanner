@@ -5,6 +5,25 @@ import { Editor } from "@pascal-app/editor";
 import { loadPlugin } from "@pascal-app/core/registry";
 import { builtinPlugin } from "@pascal-app/nodes";
 
+import GenerateDrawingSet from "@/components/generate-drawing-set.tsx";
+import type { ProjectMetadata } from "@/lib/sheets/jurisdiction.ts";
+
+/**
+ * Placeholder project metadata for the title block.
+ *
+ * Real projects carry this per record (FR-71); until projects exist this keeps
+ * the sheet engine exercised end to end. The four personnel fields are
+ * deliberately absent — a generated set carries no name until a human signs it
+ * at QA release (FR-520, FR-Q3).
+ */
+const PROJECT: ProjectMetadata = {
+  projectName: "Untitled project",
+  client: "-",
+  date: new Date().toISOString().slice(0, 10),
+  firmName: "-",
+  firmDiscipline: "ARCHITECTS, PLANNERS & ENGINEERS.",
+};
+
 /**
  * The node registry is global and must be populated before <Editor> mounts —
  * otherwise the editor comes up with no wall/door/window/level kinds and every
@@ -66,5 +85,10 @@ export default function StudioShell() {
     );
   }
 
-  return <Editor layoutVersion="v2" />;
+  return (
+    <Editor
+      layoutVersion="v2"
+      viewerToolbarRight={<GenerateDrawingSet project={PROJECT} />}
+    />
+  );
 }
