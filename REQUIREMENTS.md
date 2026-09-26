@@ -35,7 +35,7 @@ This bounds what the product is allowed to claim, and it is not negotiable in v1
 | # | Goal |
 |---|---|
 | G-1 | A non-architect can produce a complete, dimensioned, multi-storey layout without training. |
-| G-2 | The generated architectural sheets are visually and dimensionally equivalent to what a small firm produces by hand today (see §19). |
+| G-2 | The generated architectural sheets are visually and dimensionally equivalent to what a small firm produces by hand today (see §20). |
 | G-3 | Printed sheets are true to scale — a 1:100 plan measures correctly on paper. |
 | G-4 | Zero friction before payment: no signup wall on drawing, no export wall on 3D. |
 | G-5 | The engineer's structural work is a bounded, repeatable workflow inside the platform, not an email thread. |
@@ -80,8 +80,11 @@ This bounds what the product is allowed to claim, and it is not negotiable in v1
 | **Stamp Reserve** | A blank 2-inch × 2-inch region in the lower-left of every sheet, left clear for the council's physical stamp. |
 | **Underlay** | A raster or PDF image placed behind a level, scaled to real-world units, used as a tracing guide. |
 | **Export Job** | An async server-side task that renders a sheet set to PDF. |
-| **Review Queue** | The list of purchased projects awaiting engineer structural work. |
-| **Detail Library** | Reusable standard construction details, parameterised by project finishes, that populate the detail sheets. |
+| **QA Queue** | The list of paid projects awaiting mandatory architect review. |
+| **Structural Queue** | The list of released projects awaiting engineer structural work. |
+| **Release** | The architect's explicit act of approving a reviewed set. The sole unlock for the clean PDF. |
+| **Sheet Override** | A QA-authored adjustment to a generated sheet's labels, level lines or cropping, stored on the project and never written back into the scene. |
+| **Detail Library** | Fixed standard construction details that populate sheets `A.09`–`A.13`. Project finishes swap a few callout labels only. |
 
 ---
 
@@ -109,14 +112,25 @@ This bounds what the product is allowed to claim, and it is not negotiable in v1
 4. Repeats per floor with one underlay per level.
 5. Continues from step 6 of §3.1.
 
-### 3.3 Engineer completes the structural set
+### 3.3 Architect reviews and releases
 
-1. Opens the review queue, sees purchased projects with status and age.
+1. Opens the QA queue, sees paid projects awaiting review with age against the turnaround target.
 2. Assigns a project to themselves.
-3. Downloads the architectural PDF **and** a machine-readable model export (geometry, grid, levels, wall thicknesses, loads-relevant metadata).
+3. Pages through every generated sheet against the model.
+4. On the elevations and sections, adjusts labels, level-line positions and cropping. These are stored as **sheet overrides** — the scene itself is untouched.
+5. Writes their own name into the title block's **architect** and **architectural checker** fields, which were blank until now.
+6. **Releases.** Only this unlocks the clean architectural PDF. The customer is notified.
+7. If the layout is unbuildable rather than merely untidy, sends it back to the customer with notes instead of releasing.
+
+### 3.4 Engineer completes the structural set
+
+1. Opens the structural queue, sees **released** projects with status and age.
+2. Assigns a project to themselves.
+3. Downloads the architectural PDF **and** the internal machine-readable model export (geometry, grid, levels, wall thicknesses, loads-relevant metadata).
 4. Authors `S.01`–`S.12` externally in the same sheet template.
-5. Uploads the S-series PDF. The platform validates page size and sheet codes against the profile.
-6. Marks approved. Platform merges A + S into one final PDF, notifies the customer, and writes an audit entry.
+5. Fills the title block's **engineer** and **structural checker** fields.
+6. Uploads the S-series PDF. The platform validates page size and sheet codes against the profile.
+7. Marks approved. Platform merges A + S into one final PDF, notifies the customer, and writes an audit entry.
 
 ---
 
@@ -167,7 +181,7 @@ This bounds what the product is allowed to claim, and it is not negotiable in v1
 | **FR-33** | Section cut — a movable plane that cuts the model, for inspecting interiors. |
 | **FR-34** | Exploded view — separate levels vertically to show the stack. |
 | **FR-35** | Level isolation — show/hide individual levels. |
-| **FR-36** | Material assignment per surface class (external wall, internal wall, floor, ceiling, roof) from a finishes palette. The selected finishes feed the plan finishing-notes block (`FR-502`) and the detail sheets (`FR-507`–`FR-510`). |
+| **FR-36** | Material assignment per surface class (external wall, internal wall, floor, ceiling, roof) from a finishes palette. The selected finishes feed the plan finishing-notes block (`FR-502`) and a small fixed set of **callout labels** on the detail sheets (`FR-507`–`FR-510`) — floor finish and wall tile. They do not redraw those sheets. |
 | **FR-37** | Daylight control — time of day and sun orientation, with a North direction set per project. |
 | **FR-38** | Render the current 3D camera to a downloadable image. Free and unwatermarked (it is not a deliverable sheet). |
 | **FR-39** | Doors are interactive — click to open/close in the 3D view. |
@@ -190,7 +204,7 @@ This bounds what the product is allowed to claim, and it is not negotiable in v1
 
 ## 8. Functional Requirements — Drawing Set Generation (`FR-5x`)
 
-> This is the core of the product and the hardest part. See §15 for the risk.
+> This is the core of the product and the hardest part. See §16 for the risk.
 
 ### 8.1 Derivation principle
 
@@ -206,21 +220,21 @@ Each row states the source data and required content. Sheet codes follow the Mal
 |---|---|---|
 | **A.00 Site Plan** | **FR-501** | Plot boundary (chain-dash), hatched proposed footprint, road edge, North arrow, overall plot dimensions, a project-details block (location, plot area, footprint area, building height, plot name, building type), and a legend (plot boundary line / proposed plot area / road). Areas computed from `FR-1D`. |
 | **A.01–A.04 Floor Plans** | **FR-502** | One sheet per level at 1:100. Grid bubbles and grid dimension chains; running + overall dimensions all four sides; walls cut and poché'd; door and window symbols with type tags; zone name tags; furniture 2D symbols; stairs; the **finishing-notes block**; the **service-duct legend** (PD plumbing / ED electrical / ND networking / floor drain / block masonry wall); section markers; scale note; North arrow. |
-| **A.05–A.06 Elevations** | **FR-503** | One sheet per facade at 1:100. Orthographic projection of the building envelope with openings, balconies and railings. Right-hand **level line stack** — Foundation Level, NGL, Ground Floor Level, First Floor Level, Terrace Floor Level, Roof Slab Level — with floor-to-floor dimensions and a bracketed total height. |
-| **A.07 Sections** | **FR-504** | One sheet per user-placed section line at 1:100. Cut through slabs, walls, stairs and foundation; hatched earth below NGL; same level line stack and total-height dimension as elevations. |
+| **A.05–A.06 Elevations** | **FR-503** | One sheet per facade at 1:100. Orthographic projection of the building envelope with openings, balconies and railings. Right-hand **level line stack** — Foundation Level, NGL, Ground Floor Level, First Floor Level, Terrace Floor Level, Roof Slab Level — with floor-to-floor dimensions and a bracketed total height. **Generated automatically.** Labels, level-line positions and cropping are adjustable by the QA architect only (`FR-602`); the customer never edits this sheet. |
+| **A.07 Sections** | **FR-504** | One sheet per user-placed section line at 1:100. Cut through slabs, walls, stairs and foundation; hatched earth below NGL; same level line stack and total-height dimension as elevations. **Generated automatically**, with the same QA-only adjustment rule as `FR-503`. |
 | **A.08 Door Schedule** | **FR-505** | Auto-derived table. Columns: Element ID, Quantity, W × H size, 2D Symbol, 3D Back View. One column per door type; quantity from live instance counts (`FR-15`). |
 | **A.08a Window Schedule** | **FR-506** | Identical structure for window types. |
-| **A.09 Stair Detail** | **FR-507** | Stair plan detail at 1:50 with numbered treads, UP/DOWN, rise × going callout, generated from the placed stair (`FR-16`). |
-| **A.10–A.11 Ceiling Details** | **FR-508** | Standard details from the detail library — gypsum ceiling section, gypsum on aluminium frame, framing axonometric, hanger and connection details. |
-| **A.12 Toilet & Wash Basin Details** | **FR-509** | Typical toilet section at 1:20 and wash basin detail at 1:20, with finish callouts parameterised by the project's selected finishes (`FR-36`). |
-| **A.13 AC & Flooring Details** | **FR-510** | AC outdoor-unit connection detail and typical flooring build-up detail, from the detail library. |
+| **A.09 Stair Detail** | **FR-507** | Stair plan detail at 1:50 with numbered treads, UP/DOWN and a rise × going callout, generated from the placed stair (`FR-16`). |
+| **A.10–A.11 Ceiling Details** | **FR-508** | **Fixed library drawings.** Gypsum ceiling section, gypsum on aluminium frame, framing axonometric, hanger and connection details. Not derived from the model. |
+| **A.12 Toilet & Wash Basin Details** | **FR-509** | **Fixed library drawings.** Typical toilet section at 1:20 and wash basin detail at 1:20. The only project-specific content is a small set of **callout labels** swapped from the project's finishes (`FR-36`) — floor finish, wall tile. The geometry is never redrawn. |
+| **A.13 AC & Flooring Details** | **FR-510** | **Fixed library drawings.** AC outdoor-unit connection detail and typical flooring build-up detail, with the same callout-label rule as `FR-509`. |
 | **Area / Finishes Schedule** | **FR-511** | Per-level table of zones, areas and assigned finishes. Included when the profile requires it. |
 
 ### 8.3 Page furniture, applied to every sheet
 
 | ID | Requirement |
 |---|---|
-| **FR-520** | **Title block** on the right band of every sheet, populated from project metadata: firm logo and name, project name, drawing title, architect, architectural checker, engineer, structural checker, client, date, project no., scale, drawing no., and a large sheet no. |
+| **FR-520** | **Title block** on the right band of every sheet, populated from project metadata: firm logo and name, project name, drawing title, architect, architectural checker, engineer, structural checker, client, date, project no., scale, drawing no., and a large sheet no. The four **personnel fields stay blank** until a human writes them: *architect* and *architectural checker* at QA release (`FR-603`), *engineer* and *structural checker* on structural upload (`FR-83`). A watermarked preview renders them blank. |
 | **FR-521** | **Stamp reserve** — a dashed 2-inch × 2-inch region in the lower-left of every sheet with the standard caption, kept clear of all drawing content. Layout must guarantee no geometry intrudes. |
 | **FR-522** | Sheet numbering and ordering per the profile's sheet list; codes appear in both the title block and the PDF bookmarks. |
 
@@ -230,9 +244,9 @@ Each row states the source data and required content. Sheet codes follow the Mal
 |---|---|
 | **FR-530** | Generation runs as an async **export job** with queued / running / done / failed states and a progress indicator. |
 | **FR-531** | **Watermarked preview** of the full set is generated free, at any time, before payment. Watermark must not be removable client-side — it is applied server-side. |
-| **FR-532** | The clean PDF is produced only for a project with a settled payment (`FR-73`). |
+| **FR-532** | The clean PDF is released only when **both** conditions hold: a settled payment (`FR-73`) **and** an architect release (`FR-604`). Payment alone is not sufficient. |
 | **FR-533** | Output is a single multi-page PDF with vector geometry and embedded fonts, plus optional per-sheet PDFs. |
-| **FR-534** | **Print accuracy:** a sheet declared 1:100 must measure true when printed at 100% on the profile's page size. This is verified by an automated check (§17). |
+| **FR-534** | **Print accuracy:** a sheet declared 1:100 must measure true when printed at 100% on the profile's page size. This is verified by an automated check (§18). |
 | **FR-535** | **Determinism:** the same scene exported twice produces geometrically identical sheets. |
 
 ---
@@ -256,45 +270,63 @@ Each row states the source data and required content. Sheet codes follow the Mal
 | **FR-70** | Email sign-up / sign-in. A visitor may start drawing **before** signing in; the first save prompts for an account and carries the work over. |
 | **FR-71** | Project list, create, rename, duplicate, archive, delete. Per-project metadata: project name, client name, location, plot name, building type, date. These populate the title block (`FR-520`). |
 | **FR-72** | Version history with named restore points, plus automatic snapshots. Restoring never destroys a later version. |
-| **FR-73** | **One-time payment per project** unlocks the clean architectural PDF for that project. Design, 3D and watermarked preview stay free and unlimited. |
-| **FR-74** | Purchased projects allow **unlimited re-export and re-download** of the architectural set. |
-| **FR-75** | Editing a purchased project is allowed. Re-export after edits is included — **no second charge** — except where the edit crosses a defined threshold (e.g. adding a level or changing footprint beyond a set tolerance), which flags the project for engineer re-review. The threshold rule is an open question (§18, OQ-3). |
+| **FR-73** | **One-time payment per project**, charged in **Maldivian rufiyaa (MVR)**, in the mid band of roughly **4,600–12,300 MVR**. The exact figure is an admin setting (`FR-93`), not a constant in code. Payment moves the project into architect QA; it does **not** by itself release any file (`FR-532`). Design, 3D and watermarked preview stay free and unlimited. |
+| **FR-74** | Released projects allow **unlimited re-export and re-download** of the architectural set at no further charge. Re-export reapplies the stored QA sheet overrides (`FR-Q2`). |
+| **FR-75** | Editing a released project is allowed, and **re-export is included at no further charge** — *unless* the edit crosses the **re-review threshold**, which is: (a) **adding or removing a storey**, or (b) **changing the building footprint** beyond a small configured tolerance. Crossing it returns the project to the engineer (`FR-87`) and charges a separate **re-review fee** in MVR, an admin setting (`FR-93`). The customer is warned and must confirm the charge **before** the edit is committed — never billed by surprise. Sub-threshold edits (moving internal partitions, swapping furniture, renaming rooms, changing finishes) never trigger a fee. |
 | **FR-76** | Receipts and an order history per account. |
 | **FR-77** | Payment is handled by a hosted third-party provider. **No card data reaches our servers.** Payment state is confirmed server-side via webhook, never trusted from the client. |
-| **FR-78** | The customer sees project status throughout: `Designing → Purchased → Structural in progress → Complete`. |
+| **FR-78** | The customer sees project status throughout: `Designing → Paid → In architect review → Released (architectural set available) → Structural in progress → Complete`. `In architect review` shows the turnaround target (`FR-Q7`); a project returned for changes (`FR-Q5`) shows `Changes requested` with the reviewer's notes. |
 | **FR-79** | The customer downloads the **merged final PDF** (architectural + structural) once the engineer approves (`FR-85`). |
 
 ---
 
-## 11. Functional Requirements — Engineer Review Workflow (`FR-8x`)
+## 11. Functional Requirements — Architect QA Gate (`FR-Qx`)
+
+> Mandatory on **every** paid project. This gate, not payment, is what releases the clean PDF.
 
 | ID | Requirement |
 |---|---|
-| **FR-80** | A **review queue** listing purchased projects with status, purchase date and age. Sortable and filterable. |
+| **FR-Q0** | Every paid project enters architect QA. There is **no sampling, no auto-release and no bypass**, including for repeat customers. A project cannot reach the customer's downloads without passing through here. |
+| **FR-Q1** | A **QA queue** listing paid projects awaiting review, with payment date, age, and age measured against the turnaround target (`FR-Q7`). Sortable and filterable. A reviewer assigns a project to themselves; assignment is visible to other staff to prevent duplicate work. |
+| **FR-Q2** | The reviewer may adjust generated **elevations and sections** (`FR-503`, `FR-504`): label text and position, level-line positions and labels, and viewport cropping. Adjustments are stored as **sheet-level overrides on the project** — they must **not** mutate the scene graph, and they must survive a later re-export (`FR-74`). Overrides are per sheet and individually revertible. |
+| **FR-Q3** | The reviewer writes the **architect** and **architectural checker** names into the title block (`FR-520`). Both are required before release. The *engineer* and *structural checker* fields are **not** filled here — the engineer fills them on upload (`FR-83`), because no engineer is assigned yet at QA time. |
+| **FR-Q4** | **Release** is an explicit reviewer action and the sole unlock for the clean architectural PDF (`FR-532`). Release is blocked until `FR-Q3` is satisfied. |
+| **FR-Q5** | The reviewer may instead **return the project to the customer** with notes, for layouts that are unbuildable rather than merely untidy. The customer edits and resubmits at no additional charge; the project re-enters the QA queue. |
+| **FR-Q6** | Every QA action — assignment, each override, names written, release or return — is written to the project audit trail (`FR-86`). |
+| **FR-Q7** | A **turnaround target** for QA is configured by admin and shown to the customer at the point of payment and on the project status. Breaching it flags the project in the queue. |
+| **FR-Q8** | The customer **cannot** edit elevations, sections or any other generated sheet directly, before or after release. Their only lever is the model plus, where applicable, a return-for-changes cycle (`FR-Q5`). |
+
+---
+
+## 12. Functional Requirements — Engineer Review Workflow (`FR-8x`)
+
+| ID | Requirement |
+|---|---|
+| **FR-80** | A **structural queue** listing **released** projects with status, release date and age. Sortable and filterable. |
 | **FR-81** | An engineer assigns a project to themselves; assignment is visible to other staff to prevent duplicate work. |
-| **FR-82** | The engineer downloads (a) the generated architectural PDF and (b) a **machine-readable model export** — levels and heights, grid definition, wall centrelines and thicknesses, slab outlines, opening positions, stair geometry, and project metadata — in a documented JSON schema. |
+| **FR-82** | The engineer downloads (a) the generated architectural PDF and (b) a **machine-readable model export** — levels and heights, grid definition, wall centrelines and thicknesses, slab outlines, opening positions, stair geometry, and project metadata — in a documented JSON schema. This export is **internal in v1** — available to assigned staff only. A customer-facing download is a possible later addition and must not be exposed or advertised in v1. |
 | **FR-83** | The engineer uploads the completed S-series PDF. The platform **validates** page size, page count and sheet codes against the profile, and rejects a mismatch with a specific error. |
 | **FR-84** | Structural sheets are stored as an engineer-authored artefact and are **never** regenerated or altered by the platform. |
 | **FR-85** | On approval the platform **merges** A + S into one ordered final PDF with bookmarks, and notifies the customer. |
 | **FR-86** | A per-project **audit trail**: who assigned, who uploaded, what file, when, and every status transition. Immutable. |
-| **FR-87** | If the customer's post-purchase edits cross the re-review threshold (`FR-75`), the project returns to the queue flagged `Re-review` with a diff summary of what changed. |
+| **FR-87** | If the customer's post-release edits cross the re-review threshold (`FR-75`) and the re-review fee is paid, the project returns to the structural queue flagged `Re-review` with a diff summary of what changed. It also re-enters architect QA (`FR-Q0`), since the regenerated sheets have not been reviewed. |
 
 ---
 
-## 12. Functional Requirements — Admin (`FR-9x`)
+## 13. Functional Requirements — Admin (`FR-9x`)
 
 | ID | Requirement |
 |---|---|
 | **FR-90** | Catalogue management: add/edit/retire furniture entries with 2D symbol, 3D mesh, dimensions and category. |
 | **FR-91** | Detail-library management: add/edit standard details and define which finish parameters they read. |
 | **FR-92** | Jurisdiction-profile management: create, edit and version profiles; preview a profile against a sample project. |
-| **FR-93** | Pricing configuration per profile/market. |
+| **FR-93** | Pricing configuration per profile/market, denominated in **MVR**: the per-project price (`FR-73`), the **re-review fee** (`FR-75`), and the QA turnaround target (`FR-Q7`). Changing a price never alters the amount already charged on an existing order. |
 | **FR-94** | Order, refund and export-job visibility, including failed jobs with their error. |
 | **FR-95** | Staff role management: architect, engineer, admin. |
 
 ---
 
-## 13. Non-Functional Requirements
+## 14. Non-Functional Requirements
 
 | ID | Requirement |
 |---|---|
@@ -305,7 +337,7 @@ Each row states the source data and required content. Sheet codes follow the Mal
 | **NFR-5** | **Export time:** a full 14-sheet architectural set completes within 60 s p95. |
 | **NFR-6** | **Print accuracy:** dimensional error on a printed 1:100 sheet ≤ 0.5 mm on paper (`FR-534`). |
 | **NFR-7** | **Durability:** autosave at most 5 s of work at risk; local persistence survives a crash; server is the authority once signed in. |
-| **NFR-8** | **Privacy:** uploaded drawings and project data are private to the owner and assigned internal staff. Retention policy required (§18, OQ-6). |
+| **NFR-8** | **Privacy and retention:** uploaded drawings and project data are visible only to the owner and to internal staff assigned to that project. Data is retained **until the customer deletes it** — there is **no automatic expiry in v1** for uploads or archived projects. Deletion by the customer is honoured for their own content; released deliverables and audit records are retained as required for the order. |
 | **NFR-9** | **Payments:** PCI scope minimised — hosted provider, no card data stored or transited by us. |
 | **NFR-10** | **Security:** authenticated, authorised access on every project and export endpoint. Export downloads use signed, expiring URLs. |
 | **NFR-11** | **Accessibility:** keyboard navigation for all non-canvas UI, WCAG AA contrast, visible focus states. |
@@ -314,7 +346,7 @@ Each row states the source data and required content. Sheet codes follow the Mal
 
 ---
 
-## 14. Technical Approach
+## 15. Technical Approach
 
 ### 14.1 Base platform
 
@@ -356,65 +388,88 @@ This covers a large share of `FR-1x`, `FR-2x` and `FR-3x`. Our additions follow 
 
 ---
 
-## 15. Risks
+## 16. Risks
 
 | # | Risk | Mitigation |
 |---|---|---|
-| **R-1** | **Drawing-derivation fidelity.** The generated `A.01` may not look like a draughtsman's `A.01` — line weights, poché, symbol conventions and dimension placement are where hand-drawn sets earn their credibility. This is the single largest technical risk. | Make M2 (§16) prove exactly this against the reference `A.01` before any other sheet is attempted. Architect QA pass in the loop. |
-| **R-2** | **Print-scale correctness.** Off-by-a-fraction scaling makes the set useless for submission. | Automated physical-measurement check in CI (§17). |
-| **R-3** | **Council acceptance.** A generated set may be rejected for a convention we did not replicate. | Validate an end-to-end set with the council before launch; architect sign-off gate. |
-| **R-4** | **Professional liability.** Who signs and stamps the set is unresolved (§18, OQ-7). | Resolve before first paid export. |
-| **R-5** | **Non-architect input quality.** Customers will produce layouts that are dimensionally valid but practically unbuildable. | Collision and clearance warnings (`FR-23`); architect QA pass. |
-| **R-6** | **Engineer throughput.** The human structural step is the bottleneck on delivery time. | Queue visibility and ageing (`FR-80`); measure turnaround from day one. |
+| **R-1** | **Drawing-derivation fidelity.** The generated `A.01` may not look like a draughtsman's `A.01` — line weights, poché, symbol conventions and dimension placement are where hand-drawn sets earn their credibility. This is the single largest technical risk. | Make M2 (§17) prove exactly this against the reference `A.01` before any other sheet is attempted. Architect QA pass in the loop. |
+| **R-2** | **Print-scale correctness.** Off-by-a-fraction scaling makes the set useless for submission. | Automated physical-measurement check in CI (§18). |
+| **R-3** | **Council acceptance.** A generated set may be rejected for a convention we did not replicate. | Validate an end-to-end set against council expectations before launch; architect sign-off gate. |
+| **R-4** | **Implied certification.** The product delivers drawings only (§1.3), but customers may assume a purchased, architect-reviewed set is council-ready — and a salesperson or a piece of UI copy may drift into implying it. The exposure is reputational and legal. | Drawings-only position stated in-product at the point of payment and on delivery; copy audit before launch and before any marketing push (§18); no stamping partner referred to until one genuinely exists. |
+| **R-5** | **Non-architect input quality.** Customers will produce layouts that are dimensionally valid but practically unbuildable. | Collision and clearance warnings (`FR-23`); the mandatory QA gate (`FR-Q0`) with a return-for-changes path (`FR-Q5`). |
+| **R-6** | **Human throughput.** There are now **two** mandatory human steps — architect QA and engineer structural. Together they set delivery time, and both scale with headcount, not code. | Queue visibility and ageing on both (`FR-Q1`, `FR-80`); measure turnaround from day one; the QA turnaround target (`FR-Q7`) is a commitment to watch, not a hope. |
 
 ---
 
-## 16. Phasing
+## 17. Phasing
 
 | Milestone | Scope | Exit criterion |
 |---|---|---|
 | **M1 — Editor & 3D** | `FR-1x`, `FR-2x`, `FR-3x`, `FR-4x`, `FR-70`–`FR-72`, `NFR-1`–`NFR-4`, `NFR-7` | A user can draw a 3-storey building with furniture from scratch **or** by tracing an uploaded plan, and walk through it in 3D. |
 | **M2 — Sheet engine** | `FR-500`, `FR-502`, `FR-520`–`FR-522`, `FR-533`–`FR-535`, `FR-60`–`FR-62`, `NFR-6`, `NFR-13` | A generated `A.01 Ground Floor Plan` is placed side by side with the reference sheet and judged equivalent by an architect, **and** measures true at 1:100 when printed. |
-| **M3 — Full set & payment** | `FR-501`, `FR-503`–`FR-511`, `FR-530`–`FR-532`, `FR-63`, `FR-64`, `FR-73`–`FR-78`, `FR-9x`, `NFR-5`, `NFR-9`, `NFR-10`, `NFR-12` | A customer pays once and downloads a complete, clean `A.00`–`A.13` PDF. |
-| **M4 — Engineer loop** | `FR-79`, `FR-8x`, `NFR-8`, `NFR-11` | An engineer takes a purchased project from the queue, uploads `S.01`–`S.12`, approves, and the customer downloads one merged final PDF. |
+| **M3 — Full set, payment & QA gate** | `FR-501`, `FR-503`–`FR-511`, `FR-530`–`FR-532`, `FR-63`, `FR-64`, `FR-73`–`FR-78`, `FR-Qx`, `FR-9x`, `NFR-5`, `NFR-8`–`NFR-10`, `NFR-12` | A customer pays in MVR, an architect reviews and releases, **and only then** the customer downloads a complete, clean `A.00`–`A.13` PDF. An unreleased paid project yields no file. |
+| **M4 — Engineer loop** | `FR-79`, `FR-8x`, `NFR-11` | An engineer takes a **released** project from the structural queue, uploads `S.01`–`S.12`, approves, and the customer downloads one merged final PDF. |
 
-Every `FR-` and `NFR-` above appears in exactly one milestone.
+Every `FR-` and `NFR-` above appears in exactly one milestone. The QA gate lands in **M3**, not M4, because it blocks paid release — M3 is not shippable without it.
 
 ---
 
-## 17. Verification
+## 18. Verification
 
 | Check | How |
 |---|---|
-| **Visual fidelity** | Side-by-side of each generated sheet against its reference in `samplephotos/` (§19), reviewed by an architect. Gate for M2 and M3. |
+| **Visual fidelity** | Side-by-side of each generated sheet against its reference in `samplephotos/` (§20), reviewed by an architect. Gate for M2 and M3. |
 | **Print scale** | Automated: export a known-geometry test project, parse the PDF, assert that a 10,000mm wall measures 100.0mm ± 0.5mm on a 1:100 sheet (`NFR-6`). |
 | **Schedule correctness** | Automated: place a known mix of door/window instances, export, assert schedule quantities match placed counts (`FR-15`, `FR-505`, `FR-506`). |
 | **Determinism** | Automated: export the same scene twice, assert identical derived geometry (`FR-535`). |
 | **Stamp reserve** | Automated: assert no ink falls inside the reserve rectangle on any sheet (`FR-521`). |
 | **Model/view parity** | Automated: mutate a wall via the 2D view, assert the 3D geometry updates (`FR-30`). |
 | **Payment gating** | Automated: assert clean-PDF endpoints reject unpaid projects and that watermarking is server-side (`FR-531`, `FR-532`). |
+| **Release gating** | Automated: a **paid but unreleased** project must yield no clean PDF from any endpoint; release without both architect names set must be rejected (`FR-Q0`, `FR-Q3`, `FR-Q4`, `FR-532`). |
+| **QA overrides survive re-export** | Automated: apply sheet overrides, re-export, assert the overrides persist and that the scene graph is byte-identical before and after (`FR-Q2`, `FR-74`). |
+| **Re-review threshold** | Automated: a sub-threshold edit re-exports free; adding a storey or breaching footprint tolerance requires explicit fee confirmation before commit (`FR-75`, `FR-87`). |
+| **Title-block blanks** | Automated: a watermarked preview renders all four personnel fields blank; a released set has the architect pair filled; a merged final set has all four (`FR-520`, `FR-Q3`, `FR-83`). |
+| **No implied certification** | Manual copy audit before launch and before any marketing push: no interface string, email, or PDF artefact claims the output is stamped, certified, approved or submission-guaranteed (§1.3, `R-4`). |
+| **Retention** | Automated: no scheduled job expires uploads or archived projects; customer deletion removes their content (`NFR-8`). |
 | **Profile additivity** | Add a throwaway second profile; assert it renders without touching the composition engine (`FR-63`). |
-| **End-to-end** | Walk §3.1, §3.2 and §3.3 manually before each release. |
+| **End-to-end** | Walk §3.1, §3.2, §3.3 and §3.4 manually before each release. |
 
 ---
 
-## 18. Open Questions
+## 19. Decisions & Open Items
 
-| # | Question |
+### 19.1 Decisions taken
+
+All nine questions raised in the first draft are now settled. Recorded here so the reasoning is not lost.
+
+| # | Question | Decision | Encoded in |
+|---|---|---|---|
+| **D-1** | Price point and currency? | One per-project price in **MVR**, mid band ≈ **4,600–12,300**. Exact figure is an admin setting. | `FR-73`, `FR-93` |
+| **D-2** | Do elevations and sections need manual adjustment? | **Generated automatically.** The QA architect may adjust labels, level lines and cropping. The customer never edits them. | `FR-503`, `FR-504`, `FR-Q2`, `FR-Q8` |
+| **D-3** | What triggers engineer re-review, and is it charged? | **Adding a storey, or footprint change past a small tolerance.** Re-review is **paid**, fee set by admin in MVR. Sub-threshold re-export stays free. | `FR-75`, `FR-87`, `FR-93` |
+| **D-4** | Are detail sheets parameterised or boilerplate? | **Fixed library drawings.** Finishes swap a few callout labels only (floor finish, wall tile). | `FR-507`–`FR-510`, `FR-36` |
+| **D-5** | Who fills the title-block names? | Blank until a human writes them. Architect + architectural checker at QA; engineer + structural checker on structural upload. | `FR-520`, `FR-Q3`, `FR-83` |
+| **D-6** | Data retention period? | **No automatic expiry in v1.** Uploads and archived projects persist until the customer deletes them. Access limited to owner and assigned staff. | `NFR-8` |
+| **D-7** | Who signs and stamps for council? | **Nobody, on our side.** v1 delivers drawings only; the product does not arrange a stamp and must not imply one. Partner referral is a possible later addition. | §1.3, §1.5, `R-4` |
+| **D-8** | Is architect QA mandatory or sampled? | **Mandatory on every paid project**, and it is the gate that releases the clean PDF. | §11 (`FR-Q0`–`FR-Q8`) |
+| **D-9** | Is the JSON model export customer-facing? | **Internal in v1** — engineer use only. Customer download is a possible later addition. | `FR-82` |
+
+### 19.2 Still open
+
+Neither blocks starting work; both are values rather than design questions.
+
+| # | Item |
 |---|---|
-| **OQ-1** | Price point and currency for the per-project unlock. |
-| **OQ-2** | Do elevations and sections need a manual adjustment step before export, or must they be fully automatic? |
-| **OQ-3** | What edit crosses the threshold that triggers engineer re-review, and does it carry a charge (`FR-75`, `FR-87`)? |
-| **OQ-4** | How far are the detail sheets (`A.09`–`A.13`) parameterised by project finishes versus fixed boilerplate? |
-| **OQ-5** | Are the architect / checker / engineer names in the title block fixed to your firm, or per-project? |
-| **OQ-6** | Retention period for uploaded customer drawings and archived projects (`NFR-8`). |
-| **OQ-7** | **Who signs and stamps the set for council submission, and under whose professional registration?** Blocking for first paid export. |
-| **OQ-8** | Is the architect QA pass mandatory on every project, or sampled? |
-| **OQ-9** | Does the customer need the machine-readable model export, or is it internal-only (`FR-82`)? |
+| **OQ-1** | The exact per-project price and the exact re-review fee, in MVR, within the agreed band (`FR-73`, `FR-93`). |
+| **OQ-2** | The QA turnaround target to commit to publicly (`FR-Q7`). Needs a measured QA cycle time before it can be promised — set it after the first real projects, not before. |
+
+### 19.3 Consequence to be aware of
+
+The mandatory QA gate means **payment no longer produces an instant download**. This is a deliberate trade of speed for quality (G-6), but it changes the product's felt promise: the customer pays and then waits on a human. Three things follow, and all are already requirements — the turnaround target must be shown *before* the customer pays (`FR-Q7`), the status ladder must make the wait legible (`FR-78`), and the free watermarked preview must be good enough that paying feels safe (`FR-531`). If QA turnaround drifts, this is the first thing customers will complain about.
 
 ---
 
-## 19. Appendix — Reference Set Inventory
+## 20. Appendix — Reference Set Inventory
 
 The 28 sheets in `samplephotos/`. Project: **Everglow**, a 3-storey commercial building at K.Thulusdhoo, Maldives, by **ARTEFACT (Architects, Planners & Engineers)**, dated 23-09-2026. This is the target output.
 
