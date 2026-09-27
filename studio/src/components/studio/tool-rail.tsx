@@ -108,8 +108,11 @@ export function ToolRail() {
   const mode = useEditor((s) => s.mode);
   const tool = useEditor((s) => s.tool);
   const armToolMode = useEditor((s) => s.armToolMode);
+  const setPhase = useEditor((s) => s.setPhase);
+  const setCatalogCategory = useEditor((s) => s.setCatalogCategory);
 
-  const activeId = mode === "build" && tool ? String(tool) : "select";
+  const activeId =
+    mode === "build" && tool ? (tool === "zone" ? "room" : String(tool)) : "select";
 
   const select = (item: RailItem) => {
     if (item.tool === null) return;
@@ -117,14 +120,18 @@ export function ToolRail() {
       armToolMode({ mode: "select" });
       return;
     }
-    armToolMode({ mode: "build", tool: item.tool });
+    setPhase("structure");
+    if (item.tool === "item") {
+      setCatalogCategory("furniture");
+    }
+    armToolMode({ mode: "build", tool: item.tool === "room" ? "zone" : item.tool });
   };
 
   return (
     <GlassPanel
       as="nav"
       aria-label="Drawing tools"
-      className="pointer-events-auto flex w-[72px] flex-col"
+      className="pointer-events-auto flex h-full w-[72px] min-h-0 flex-col overflow-y-auto"
     >
       <div role="tablist" aria-orientation="vertical" className="flex flex-col items-center gap-1 p-2">
         {DRAWING_TOOLS.map((item) => (

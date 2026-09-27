@@ -8,8 +8,11 @@ import dynamic from "next/dynamic";
 const StudioShell = dynamic(() => import("@/components/studio-shell"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full items-center justify-center">
-      <p className="text-sm opacity-60">Loading studio…</p>
+    <div className="studio-shell relative flex h-full items-center justify-center">
+      <div className="studio-backdrop" aria-hidden="true" />
+      <p className="relative text-sm" style={{ color: "var(--ink-muted)" }}>
+        Loading studio…
+      </p>
     </div>
   ),
 });

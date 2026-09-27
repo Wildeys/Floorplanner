@@ -7,6 +7,7 @@ import { builtinPlugin } from "@pascal-app/nodes";
 import { useScene } from "@pascal-app/core";
 
 import { FirstRunHint } from "@/components/studio/first-run-hint.tsx";
+import { FurnitureCatalog } from "@/components/studio/furniture-catalog.tsx";
 import { MobileNotice } from "@/components/studio/mobile-notice.tsx";
 import { SheetStrip } from "@/components/studio/sheet-strip.tsx";
 import { ToolRail } from "@/components/studio/tool-rail.tsx";
@@ -32,8 +33,12 @@ const PROJECT: ProjectMetadata = {
   firmDiscipline: "ARCHITECTS, PLANNERS & ENGINEERS.",
 };
 
-/** Below this the shell is view-only (DESIGN.md §15). */
-const EDIT_MIN_WIDTH = 1024;
+/**
+ * Match Pascal's own mobile breakpoint (768px). A wider cutoff hid the
+ * customer tool rail while the editor stayed in desktop mode and opened
+ * its Plugins column instead.
+ */
+const EDIT_MIN_WIDTH = 768;
 /** At or above this the plan and model share the canvas by default (§4). */
 const SPLIT_MIN_WIDTH = 1280;
 
@@ -96,6 +101,7 @@ export default function StudioShell() {
 
   const width = useViewportWidth();
   const canEdit = width === null || width >= EDIT_MIN_WIDTH;
+  const furnitureOpen = useEditor((s) => s.mode === "build" && s.tool === "item");
   useInitialSplitView(width);
 
   const project = useMemo(() => PROJECT, []);
@@ -157,23 +163,22 @@ export default function StudioShell() {
 
       <div className="relative z-10 flex min-h-0 flex-1 gap-3 px-4 pt-3">
         {canEdit && (
-          <div className="pointer-events-none flex shrink-0 items-start">
+          <div className="pointer-events-none flex h-full min-h-0 shrink-0 items-stretch">
             <ToolRail />
           </div>
         )}
 
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-[20px]">
+        <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden rounded-[20px]">
           <Editor
             layoutVersion="v2"
             onSaveStatusChange={setSaveStatus}
             /*
-             * `sidebarTabs` is intentionally unset: the node inspector is
-             * PanelManager in the editor's own overlays and floats over the
-             * canvas, so leaving this empty removes the left column without
-             * costing any property editing.
+             * `sidebarTabs` is unset so we do not add more rail tabs. Pascal
+             * still injects a Plugins column in edit mode; `.studio-shell`
+             * hides that column in CSS. PanelManager stays as the inspector.
              *
-             * `stageOverlay` is intentionally unset too — filling it hides
-             * Pascal's FloatingLevelSelector, which is our level control.
+             * `stageOverlay` stays unset — filling it hides
+             * FloatingLevelSelector, which is the level control.
              */
             viewerToolbarLeft={canEdit ? <ViewControls /> : undefined}
           />
@@ -184,6 +189,12 @@ export default function StudioShell() {
             </div>
           )}
         </div>
+
+        {canEdit && furnitureOpen ? (
+          <div className="flex h-full min-h-0 w-[300px] shrink-0">
+            <FurnitureCatalog />
+          </div>
+        ) : null}
       </div>
 
       <div className="pointer-events-none relative z-20 flex gap-3 p-4">

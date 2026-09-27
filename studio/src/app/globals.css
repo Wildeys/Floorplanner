@@ -19,6 +19,11 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * The Pascal editor's `dark` class reads these tokens. Customer pages do not:
+ * home and the studio shell keep the light glass palette even when the OS is
+ * in dark mode (DESIGN.md §3).
+ */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -27,9 +32,9 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(180deg, #d8e8f6 0%, #f4f7fb 100%);
+  color: #1a2330;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
 /* ==========================================================================
@@ -103,6 +108,9 @@ body {
 .glass-panel > .glass-content {
   position: relative;
   z-index: 1;
+  /* Flex/grid classes are set on the panel; this lets those children
+     participate in that layout instead of stacking in a nested block. */
+  display: contents;
 }
 
 /* Focus is visible on every non-canvas control (NFR-11, DESIGN.md §3.4). */
@@ -158,6 +166,73 @@ body {
     transition-duration: 0.01ms !important;
   }
   .glass-panel > .glass-frost { filter: none; }
+}
+
+/*
+ * Pascal appends a Plugins panel to the v2 left column whenever
+ * workspaceMode is `edit`, even when the host passes no sidebarTabs. The
+ * customer tool rail is the drawing chrome; hide that column so the canvas
+ * can use the width.
+ */
+.studio-shell .dark.bg-sidebar > .flex.min-h-0.flex-1 > .relative.z-10.flex-shrink-0.bg-sidebar {
+  display: none;
+}
+
+/*
+ * The floating inspector is `position: fixed`, so it escapes the canvas and
+ * sits on the drawing-sheet strip. Pin it to the viewer column and paint it
+ * with the light glass palette so labels stay readable on the sky backdrop.
+ */
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 {
+  --background: #ffffff;
+  --foreground: #1a2330;
+  --muted-foreground: #5b6775;
+  position: absolute;
+  top: 4.5rem;
+  right: 1rem;
+  max-height: calc(100% - 5.5rem);
+  background: rgba(255, 255, 255, 0.94);
+  color: #1a2330;
+  border-color: rgba(26, 35, 48, 0.12);
+  box-shadow: 0 8px 32px rgba(15, 35, 70, 0.12);
+}
+
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 .text-foreground,
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 h2 {
+  color: #1a2330;
+}
+
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 .text-muted-foreground {
+  color: #5b6775;
+}
+
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 button {
+  color: #1a2330;
+}
+
+/* Header icon wells are hard-coded near-black in the editor. */
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 button[class*="bg-[#2C2C2E]"],
+.studio-shell [data-viewer-bounds] .fixed.top-20.right-4 button[class*="bg-[#3e3e3e]"] {
+  background: rgba(26, 35, 48, 0.06);
+  color: #5b6775;
+}
+
+/* Shortcut hint HUD — same light tokens so it does not read as a black card
+   over the canvas. */
+.studio-shell [data-viewer-bounds] .fixed.right-4.z-40 {
+  --background: #ffffff;
+  --foreground: #1a2330;
+  --muted-foreground: #5b6775;
+  position: absolute;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1a2330;
+  border-color: rgba(26, 35, 48, 0.12);
+}
+
+/* The editor's own bottom tool bar sits on our sheet strip. The customer
+   rail is the drawing chrome. */
+.studio-shell [data-viewer-bounds] .fixed.bottom-6 {
+  display: none;
 }
 
 .hidden-svg {
