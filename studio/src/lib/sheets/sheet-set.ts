@@ -276,16 +276,93 @@ function projector(
   ];
 }
 
-function drawPolygon(
+type DrawablePolygon = {
+  points: readonly (readonly [number, number])[];
+  fill?: string;
+  stroke?: string;
+  weightMm?: number;
+  hatch?: { spacingMm: number; angleDeg: number; weightMm: number; stroke: string };
+};
+
+function tracePolygon(
   doc: PdfDoc,
-  polygon: { points: readonly (readonly [number, number])[]; fill?: string; stroke?: string; weightMm?: number },
+  polygon: DrawablePolygon,
   project: (p: readonly [number, number]) => [number, number],
 ): void {
-  if (polygon.points.length < 3) return;
   const [first, ...rest] = polygon.points.map(project);
   doc.moveTo(first![0], first![1]);
   for (const [px, py] of rest) doc.lineTo(px, py);
-  doc.closePath().lineWidth(mm(polygon.weightMm ?? 0.25));
+  doc.closePath();
+}
+
+/**
+ * Rule a hatch pattern inside a shape.
+ *
+ * The shape is used as a clip path and parallel lines are swept across its
+ * bounding box, which is exact for any polygon — including the concave,
+ * mitred wall outlines — without needing line/polygon intersection maths.
+ * Spacing is a paper dimension, so the pattern reads the same density on a
+ * 1:20 detail as on a 1:100 plan.
+ */
+function drawHatch(
+  doc: PdfDoc,
+  polygon: DrawablePolygon,
+  project: (p: readonly [number, number]) => [number, number],
+): void {
+  const hatch = polygon.hatch;
+  if (!hatch) return;
+  const projected = polygon.points.map(project);
+  const xs = projected.map(([x]) => x);
+  const ys = projected.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const spacing = mm(hatch.spacingMm);
+  if (spacing <= 0) return;
+  const angle = (hatch.angleDeg * Math.PI) / 180;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  // Sweep the perpendicular offset across the box's full diagonal so the
+  // pattern covers every corner whatever the angle.
+  const diagonal = Math.hypot(maxX - minX, maxY - minY);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  doc.save();
+  tracePolygon(doc, polygon, project);
+  doc.clip();
+  doc.lineWidth(mm(hatch.weightMm));
+  for (let offset = -diagonal; offset <= diagonal; offset += spacing) {
+    // A point on the line, displaced along the normal by `offset`.
+    const px = cx - dy * offset;
+    const py = cy + dx * offset;
+    doc
+      .moveTo(px - dx * diagonal, py - dy * diagonal)
+      .lineTo(px + dx * diagonal, py + dy * diagonal)
+      .stroke(hatch.stroke);
+  }
+  doc.restore();
+}
+
+function drawPolygon(
+  doc: PdfDoc,
+  polygon: DrawablePolygon,
+  project: (p: readonly [number, number]) => [number, number],
+): void {
+  if (polygon.points.length < 3) return;
+
+  if (polygon.hatch) {
+    // Hatch replaces the flat fill: rule the interior, then outline it.
+    drawHatch(doc, polygon, project);
+    tracePolygon(doc, polygon, project);
+    doc.lineWidth(mm(polygon.weightMm ?? 0.25)).stroke(polygon.stroke ?? INK);
+    return;
+  }
+
+  tracePolygon(doc, polygon, project);
+  doc.lineWidth(mm(polygon.weightMm ?? 0.25));
 
   if (polygon.fill && polygon.stroke) {
     doc.fillAndStroke(polygon.fill, polygon.stroke);
@@ -433,7 +510,8 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
   levels.forEach((level, index) => {
     if (index > 0) doc.addPage({ size: [pageSize[0], pageSize[1]], margin: 0 });
 
-    const extent = boundsExtent(level.bounds);
+    // Placement uses the sheet extent so the dimension chains are on the page.
+    const extent = boundsExtent(level.sheetBounds);
     const { scale, atRequested } = resolveSheetScale(
       extent.width,
       extent.height,
@@ -452,7 +530,7 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
       index,
     );
 
-    drawPlan(doc, level.drawing, placement, level.bounds.minX, level.bounds.minY);
+    drawPlan(doc, level.drawing, placement, level.sheetBounds.minX, level.sheetBounds.minY);
     drawSheetCaption(doc, viewport, title, scale, atRequested);
     drawNorthArrow(doc, viewport.x + viewport.width - mm(12), viewport.y + mm(12));
     drawStampReserve(doc, profile, page);

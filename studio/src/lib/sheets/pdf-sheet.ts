@@ -136,6 +136,7 @@ export type PdfDoc = {
   lineTo(x: number, y: number): PdfDoc;
   rect(x: number, y: number, w: number, h: number): PdfDoc;
   closePath(): PdfDoc;
+  clip(): PdfDoc;
   lineWidth(w: number): PdfDoc;
   dash(length: number, options?: { space?: number }): PdfDoc;
   undash(): PdfDoc;

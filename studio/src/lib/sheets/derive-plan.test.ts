@@ -123,7 +123,9 @@ test("levels derive in elevation order with room labels and areas", () => {
     },
   ] as never[]);
 
-  const levels = derivePlanLevels(nodes);
+  // Dimensions off: this test is about room tags, and dimension text would
+  // otherwise count toward the label assertions below.
+  const levels = derivePlanLevels(nodes, { dimensions: false });
   assert.equal(levels.length, 2);
   assert.equal(levels[0]!.name, "Ground", "lowest storey first");
   assert.equal(levels[1]!.name, "First");

@@ -17,6 +17,18 @@ export type PlanPolygon = {
   readonly stroke?: string;
   /** Pen width in millimetres on paper. Never scaled with the drawing. */
   readonly weightMm?: number;
+  /**
+   * Draw a ruled pattern inside the shape instead of a flat fill — the block
+   * masonry convention. Spacing is in paper millimetres, so the pattern keeps
+   * its printed density at any scale rather than thinning out as the drawing
+   * shrinks.
+   */
+  readonly hatch?: {
+    readonly spacingMm: number;
+    readonly angleDeg: number;
+    readonly weightMm: number;
+    readonly stroke: string;
+  };
 };
 
 /** An open path: jambs, swing arcs, sill lines, dimension strings. */

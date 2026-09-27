@@ -176,10 +176,11 @@ test("a set renders one page per level at true scale", async () => {
   for (const sheet of sheets) {
     assert.equal(sheet.scale, 100);
     assert.equal(sheet.atDefaultScale, true);
-    // 19.092 m + 0.15 m wall thickness, drawn at 1:100.
+    // The placed width is the sheet extent: the building (19.092 m + 0.15 m of
+    // wall) plus the left-hand dimension chain and grid bubbles, at 1:100.
     assert.ok(
-      Math.abs(sheet.planWidthMm - 192.42) < 0.5,
-      `expected ~192.42 mm, got ${sheet.planWidthMm}`,
+      Math.abs(sheet.planWidthMm - 225.2) < 0.5,
+      `expected ~225.2 mm, got ${sheet.planWidthMm}`,
     );
   }
 });

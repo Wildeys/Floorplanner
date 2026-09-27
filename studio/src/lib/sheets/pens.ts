@@ -47,3 +47,18 @@ export const TEXT_MM = {
   dimension: 1.8,
   gridBubble: 2.4,
 } as const;
+
+/**
+ * Block masonry, as the reference legend labels it.
+ *
+ * Spacing is a paper dimension so the pattern keeps its density at any scale.
+ * Note this is *not* what the reference prints on a 1:100 plan — there the
+ * walls read solid, and the ruled pattern appears on the 1:20 details. Use it
+ * where it is legible, not everywhere.
+ */
+export const MASONRY_HATCH = {
+  spacingMm: 0.8,
+  angleDeg: 45,
+  weightMm: 0.13,
+  stroke: "#1a1a1a",
+} as const;

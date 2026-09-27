@@ -19,8 +19,10 @@
 
 import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wall";
 
+import { annotationMargin, deriveDimensions } from "./derive-dimensions.ts";
 import { deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
-import { INK, PEN, TEXT_MM } from "./pens.ts";
+import { MALDIVES_PROFILE, type UnitDisplay } from "./jurisdiction.ts";
+import { INK, MASONRY_HATCH, PEN, TEXT_MM } from "./pens.ts";
 import type {
   PlanBounds,
   PlanDrawing,
@@ -47,7 +49,14 @@ export type DerivedLevel = {
   readonly id: string;
   readonly name: string;
   readonly drawing: PlanDrawing;
+  /** The building itself — the mitred outer face of its walls. */
   readonly bounds: PlanBounds;
+  /**
+   * What the sheet must reserve: the building plus its dimension chains and
+   * grid bubbles. Kept separate from `bounds` because area and geometry work
+   * asks about the building, while placement asks about the drawing.
+   */
+  readonly sheetBounds: PlanBounds;
   /** Sum of the level's zone areas, m². */
   readonly floorAreaM2: number;
   readonly wallCount: number;
@@ -150,7 +159,10 @@ export function polygonCentroid(points: readonly PlanPoint[]): PlanPoint {
  * `calculateLevelMiters` resolves the corner geometry across the whole level at
  * once, so walls must be passed together rather than one at a time.
  */
-export function deriveWallPolygons(walls: readonly SceneNodeLike[]): PlanPolygon[] {
+export function deriveWallPolygons(
+  walls: readonly SceneNodeLike[],
+  fill: WallFill = "solid",
+): PlanPolygon[] {
   const usable = walls.filter(
     (wall) => Array.isArray(wall.start) && Array.isArray(wall.end),
   );
@@ -167,13 +179,23 @@ export function deriveWallPolygons(walls: readonly SceneNodeLike[]): PlanPolygon
     if (footprint.length < 3) continue;
     polygons.push({
       points: footprint.map((point) => [point.x, point.y] as PlanPoint),
-      fill: INK.poche,
+      fill: fill === "solid" ? INK.poche : undefined,
+      hatch: fill === "hatch" ? MASONRY_HATCH : undefined,
       stroke: INK.line,
       weightMm: PEN.cut,
     });
   }
   return polygons;
 }
+
+/**
+ * How cut walls are filled.
+ *
+ * The reference set prints solid poché on its 1:100 plans and reserves the
+ * ruled block-masonry pattern for the 1:20 details, where it is legible. So
+ * `solid` is the default for plans, and `hatch` exists for detail scales.
+ */
+export type WallFill = "solid" | "hatch";
 
 export type DeriveOptions = {
   /** Include zone name and area tags. */
@@ -182,6 +204,13 @@ export type DeriveOptions = {
   readonly openingMarks?: boolean;
   /** Include furniture and fixture outlines. */
   readonly furniture?: boolean;
+  /** Include dimension chains and grid bubbles. */
+  readonly dimensions?: boolean;
+  /** Bubble each dimension station with a grid letter / number. */
+  readonly gridBubbles?: boolean;
+  readonly wallFill?: WallFill;
+  /** Unit display for dimension text. Defaults to the Maldives profile. */
+  readonly units?: UnitDisplay;
 };
 
 const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
@@ -197,7 +226,15 @@ export function derivePlanLevels(
   nodes: SceneNodes,
   options: DeriveOptions = {},
 ): DerivedLevel[] {
-  const { roomLabels = true, openingMarks = true, furniture = true } = options;
+  const {
+    roomLabels = true,
+    openingMarks = true,
+    furniture = true,
+    dimensions = true,
+    gridBubbles = true,
+    wallFill = "solid",
+    units = MALDIVES_PROFILE.units,
+  } = options;
   const levels = collectLevels(nodes);
   const levelIds = new Set(levels.map((level) => level.id));
 
@@ -221,7 +258,7 @@ export function derivePlanLevels(
   for (const level of levels) {
     const buckets = byLevel.get(level.id) ?? new Map<string, SceneNodeLike[]>();
     const walls = buckets.get("wall") ?? [];
-    const polygons = deriveWallPolygons(walls);
+    const polygons = deriveWallPolygons(walls, wallFill);
     if (polygons.length === 0) continue;
 
     const wallsById = new Map(walls.map((wall) => [wall.id, wall]));
@@ -277,6 +314,24 @@ export function derivePlanLevels(
       });
     }
 
+    // Dimensions measure the building, so they are derived from the wall
+    // bounds — then the level's own bounds are grown to include the annotation
+    // so the sheet reserves room for it rather than cropping it away.
+    const bounds = boundsOf(polygons);
+    let sheetBounds = bounds;
+    if (dimensions) {
+      const annotations = deriveDimensions(walls, bounds, { units, gridBubbles });
+      paths.push(...annotations.paths);
+      labels.push(...annotations.labels);
+      const margin = annotationMargin(gridBubbles);
+      sheetBounds = {
+        minX: bounds.minX - margin,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY + margin,
+      };
+    }
+
     derived.push({
       id: level.id,
       name: level.name ?? "LEVEL",
@@ -289,7 +344,8 @@ export function derivePlanLevels(
         paths,
         labels,
       },
-      bounds: boundsOf(polygons),
+      bounds,
+      sheetBounds,
       floorAreaM2,
       wallCount: walls.length,
       openingCount,
