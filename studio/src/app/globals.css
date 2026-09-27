@@ -31,3 +31,138 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================================================
+   Studio shell — glass chrome over a sky backdrop (DESIGN.md §3)
+
+   Everything here is scoped under `.studio-shell` on purpose. The Pascal
+   editor's own chrome renders inside this subtree and is built for dark mode;
+   leaking colour or surface rules into it produces half-relit panels with
+   broken contrast. Our glass treatment stops at components we own.
+   ========================================================================== */
+
+.studio-shell {
+  /* Colour — DESIGN.md §3.4 */
+  --ink: #1a2330;
+  --ink-muted: #5b6775;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.12);
+  --danger: #dc4c4c;
+  --success: #2f8f5b;
+
+  /* Glass — DESIGN.md §3.2 */
+  --glass-fill: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.85);
+  --glass-shadow: 0 8px 32px rgba(15, 35, 70, 0.1);
+  --glass-hover: rgba(255, 255, 255, 0.45);
+  --radius-card: 20px;
+  --radius-control: 16px;
+  --radius-pill: 999px;
+
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
+
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Backdrop — DESIGN.md §3.1.
+   The gradient is the base layer rather than a fallback: it is what actually
+   ships today, so the studio never depends on an asset that may not load. A
+   photographic sky can be layered over this later without touching anything
+   else. */
+.studio-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, #d8e8f6 0%, #f4f7fb 100%);
+}
+
+/* Glass panel — two stacked layers. The frost samples the backdrop and is the
+   only thing the refraction filter touches; the content layer is never
+   displaced, so text and focus rings stay sharp (DESIGN.md §3.2). */
+.glass-panel {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow);
+  background: var(--glass-fill);
+}
+
+.glass-panel > .glass-frost {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  filter: url(#glass-refraction);
+}
+
+.glass-panel > .glass-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Focus is visible on every non-canvas control (NFR-11, DESIGN.md §3.4). */
+.studio-shell :is(button, a, input, select, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-control);
+}
+
+.studio-shell button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Tool rail states — selection is signalled by well + stroke + label weight
+   together, never by colour alone (DESIGN.md §16). */
+.tool-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 56px;
+  min-height: 56px;
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.tool-button:hover:not(:disabled) { background: var(--glass-hover); }
+.tool-button[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.tool-button .tool-label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink-muted);
+}
+.tool-button[aria-selected="true"] .tool-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* DESIGN.md §16 / NFR-11: no refraction animation, no export-tile pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .studio-shell *,
+  .studio-shell *::before,
+  .studio-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .glass-panel > .glass-frost { filter: none; }
+}
+
+.hidden-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
