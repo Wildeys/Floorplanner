@@ -1,0 +1,234 @@
+/**
+ * Doors, windows and furniture in plan (FR-14, FR-15, FR-21, FR-24).
+ *
+ * ## How an opening is placed
+ *
+ * A door or window stores `wallId` plus `position[0]`, which Pascal's own
+ * wall-topology treats as a distance in metres **from that wall's start point**
+ * along its axis (see `attachmentSpan` / the `totalLength * startT` comparison
+ * in `core/systems/wall/wall-topology.js`). `width` is the clear span. So the
+ * opening occupies `position[0] ± width/2` measured along the wall, and spans
+ * the full wall thickness across it.
+ *
+ * ## Why openings are painted, not subtracted
+ *
+ * The opening is knocked out by overdrawing the wall in the sheet colour rather
+ * than by booleaning it out of the mitred wall polygon. A boolean against
+ * mitred outlines is a great deal more code with many more ways to be quietly
+ * wrong at corners, and on an opaque sheet the printed result is identical.
+ * Draw order therefore matters: walls, then knock-outs, then jambs, then
+ * symbols.
+ */
+
+import { planFootprintCorners } from "@pascal-app/core/plan-footprint";
+
+import { INK, PEN, TEXT_MM } from "./pens.ts";
+import type { PlanLabel, PlanPath, PlanPoint, PlanPolygon, SceneNodeLike } from "./plan-types.ts";
+
+const DEFAULT_WALL_THICKNESS = 0.1;
+const DEFAULT_OPENING_WIDTH = 0.9;
+
+type WallGeometry = {
+  readonly start: PlanPoint;
+  readonly end: PlanPoint;
+  readonly thickness: number;
+  readonly length: number;
+  /** Unit vector along the wall, start → end. */
+  readonly axis: PlanPoint;
+  /** Unit normal, left of the axis. */
+  readonly normal: PlanPoint;
+};
+
+export function wallGeometry(wall: SceneNodeLike): WallGeometry | null {
+  if (!wall.start || !wall.end) return null;
+  const [sx, sy] = wall.start;
+  const [ex, ey] = wall.end;
+  const dx = ex - sx;
+  const dy = ey - sy;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9) return null;
+  return {
+    start: [sx, sy],
+    end: [ex, ey],
+    thickness: wall.thickness ?? DEFAULT_WALL_THICKNESS,
+    length,
+    axis: [dx / length, dy / length],
+    normal: [-dy / length, dx / length],
+  };
+}
+
+function alongWall(geometry: WallGeometry, distance: number, offset: number): PlanPoint {
+  return [
+    geometry.start[0] + geometry.axis[0] * distance + geometry.normal[0] * offset,
+    geometry.start[1] + geometry.axis[1] * distance + geometry.normal[1] * offset,
+  ];
+}
+
+export type DerivedOpening = {
+  /** Sheet-coloured knock-out removing the wall across the opening. */
+  readonly knockOut: PlanPolygon;
+  /** Jamb faces and the symbol (swing arc, sill lines). */
+  readonly paths: readonly PlanPath[];
+  readonly label: PlanLabel | null;
+};
+
+/**
+ * Approximate a circular arc as a polyline.
+ *
+ * A door swing is a quarter circle; 12 segments is under a tenth of a
+ * millimetre of chord error at 1:100 and keeps the emitted PDF small.
+ */
+function arc(
+  centre: PlanPoint,
+  radius: number,
+  fromRad: number,
+  toRad: number,
+  segments = 12,
+): PlanPoint[] {
+  const points: PlanPoint[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = fromRad + ((toRad - fromRad) * i) / segments;
+    points.push([
+      centre[0] + Math.cos(angle) * radius,
+      centre[1] + Math.sin(angle) * radius,
+    ]);
+  }
+  return points;
+}
+
+/**
+ * Derive one door or window sitting in a wall.
+ *
+ * Returns null when the host wall is missing or degenerate — an opening with
+ * nowhere to sit is dropped rather than drawn floating in space.
+ */
+export function deriveOpening(
+  node: SceneNodeLike,
+  wall: SceneNodeLike,
+  options: { showMarks: boolean },
+): DerivedOpening | null {
+  const geometry = wallGeometry(wall);
+  if (!geometry) return null;
+
+  const width = node.width ?? DEFAULT_OPENING_WIDTH;
+  const centre = node.position?.[0] ?? geometry.length / 2;
+  const half = width / 2;
+  const start = Math.max(0, centre - half);
+  const end = Math.min(geometry.length, centre + half);
+  if (end - start < 1e-6) return null;
+
+  // Overshoot the wall faces slightly so the knock-out fully clears the wall's
+  // own outline stroke instead of leaving a hairline across the opening.
+  const reach = geometry.thickness / 2 + PEN.cut / 1000;
+
+  const knockOut: PlanPolygon = {
+    points: [
+      alongWall(geometry, start, reach),
+      alongWall(geometry, end, reach),
+      alongWall(geometry, end, -reach),
+      alongWall(geometry, start, -reach),
+    ],
+    fill: INK.paper,
+    weightMm: 0,
+  };
+
+  const jambHalf = geometry.thickness / 2;
+  const paths: PlanPath[] = [
+    {
+      points: [alongWall(geometry, start, jambHalf), alongWall(geometry, start, -jambHalf)],
+      stroke: INK.line,
+      weightMm: PEN.opening,
+    },
+    {
+      points: [alongWall(geometry, end, jambHalf), alongWall(geometry, end, -jambHalf)],
+      stroke: INK.line,
+      weightMm: PEN.opening,
+    },
+  ];
+
+  if (node.type === "window") {
+    // Two lines across the reveal, the glazing line between them — how the
+    // reference set draws W01 / W02 at 1:100.
+    for (const offset of [jambHalf * 0.55, 0, -jambHalf * 0.55]) {
+      paths.push({
+        points: [alongWall(geometry, start, offset), alongWall(geometry, end, offset)],
+        stroke: INK.line,
+        weightMm: PEN.symbol,
+      });
+    }
+  } else {
+    // Door: leaf drawn open across the opening, plus its swing arc.
+    const hingeAtStart = node.hingesSide !== "right";
+    const hinge = hingeAtStart ? start : end;
+    const swingSign = node.swingDirection === "inward" ? -1 : 1;
+
+    const hingePoint = alongWall(geometry, hinge, 0);
+    const axisAngle = Math.atan2(geometry.axis[1], geometry.axis[0]);
+    const towardOpening = hingeAtStart ? axisAngle : axisAngle + Math.PI;
+    const swung = towardOpening + swingSign * (Math.PI / 2);
+
+    paths.push({
+      points: [
+        hingePoint,
+        [
+          hingePoint[0] + Math.cos(swung) * width,
+          hingePoint[1] + Math.sin(swung) * width,
+        ],
+      ],
+      stroke: INK.line,
+      weightMm: PEN.opening,
+    });
+
+    paths.push({
+      points: arc(hingePoint, width, towardOpening, swung),
+      stroke: INK.line,
+      weightMm: PEN.symbol,
+    });
+  }
+
+  // The type tag (D01, W01…) as printed on the reference schedules (FR-15).
+  const mark = node.mark ?? node.name;
+  const label: PlanLabel | null =
+    options.showMarks && mark
+      ? {
+          at: alongWall(geometry, (start + end) / 2, -(jambHalf + 0.35)),
+          text: mark.toUpperCase(),
+          sizeMm: TEXT_MM.openingMark,
+          align: "center",
+        }
+      : null;
+
+  return { knockOut, paths, label };
+}
+
+/**
+ * Furniture and fixtures in plan (FR-21, FR-24).
+ *
+ * The footprint comes from core's `planFootprintCorners`, the same helper the
+ * editor's spatial grid uses for placement, so what the drawing shows is what
+ * the model actually reserves — rather than a second, subtly different idea of
+ * where the object sits.
+ *
+ * Items are drawn as outlines at the "seen" weight: they sit below the cut
+ * plane, so they must never compete with the walls.
+ */
+export function deriveItemFootprint(item: SceneNodeLike): PlanPolygon | null {
+  const position = item.position;
+  const dimensions = item.dimensions;
+  if (!position || !dimensions) return null;
+  if (dimensions[0] <= 0 || dimensions[2] <= 0) return null;
+
+  const rotationY = item.rotation?.[1] ?? 0;
+  const corners = planFootprintCorners(
+    [position[0], position[1] ?? 0, position[2] ?? 0],
+    [dimensions[0], dimensions[1] ?? 0, dimensions[2]],
+    rotationY,
+  );
+  if (corners.length < 3) return null;
+
+  return {
+    points: corners.map(([x, z]) => [x, z] as PlanPoint),
+    stroke: INK.line,
+    weightMm: PEN.seen,
+  };
+}

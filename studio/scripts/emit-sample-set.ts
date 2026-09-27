@@ -104,6 +104,75 @@ function rooms(levelId: string, prefix: string, label: string): Node[] {
   return nodes;
 }
 
+/**
+ * A door into each guest room off the corridor, and a window on the rear wall
+ * of each bay — the arrangement the reference set's A.01 shows.
+ *
+ * `position[0]` is metres from the host wall's start, which is why the corridor
+ * door offsets are measured along that wall rather than in world space.
+ */
+function openings(levelId: string, prefix: string): Node[] {
+  const nodes: Node[] = [];
+  let x = 0;
+  BAYS_MM.forEach((bay, i) => {
+    const w = bay / 1000;
+    // Door off the corridor wall, centred in the bay.
+    nodes.push({
+      id: `${prefix}_d${i}`,
+      type: "door",
+      parentId: levelId,
+      wallId: `${prefix}_corridor`,
+      width: 0.8,
+      position: [x + w / 2, 0, 0],
+      mark: "D03",
+      hingesSide: i % 2 === 0 ? "left" : "right",
+    });
+    // Window on the rear perimeter wall. That wall runs from [W,D] to [0,D],
+    // so its local distance counts back from the far end.
+    nodes.push({
+      id: `${prefix}_w${i}`,
+      type: "window",
+      parentId: levelId,
+      wallId: `${prefix}_p2`,
+      width: 1.5,
+      position: [WIDTH - (x + w / 2), 0, 0],
+      mark: "W01",
+    });
+    x += w;
+  });
+  return nodes;
+}
+
+/** A bed and a side table per bay, so the plan carries real furniture. */
+function furniture(levelId: string, prefix: string): Node[] {
+  const nodes: Node[] = [];
+  let x = 0;
+  BAYS_MM.forEach((bay, i) => {
+    const w = bay / 1000;
+    const centreX = x + w / 2;
+    nodes.push({
+      id: `${prefix}_bed${i}`,
+      type: "item",
+      parentId: levelId,
+      name: "Double bed",
+      position: [centreX, 0, DEPTH - 1.4],
+      dimensions: [1.6, 0.5, 2.0],
+      rotation: [0, 0, 0],
+    });
+    nodes.push({
+      id: `${prefix}_tbl${i}`,
+      type: "item",
+      parentId: levelId,
+      name: "Side table",
+      position: [centreX - 1.1, 0, DEPTH - 0.6],
+      dimensions: [0.45, 0.5, 0.45],
+      rotation: [0, 0, 0],
+    });
+    x += w;
+  });
+  return nodes;
+}
+
 function buildScene(): SceneNodes {
   const storeys = [
     { id: "level_0", name: "Ground", elevation: 0, label: "Room" },
@@ -125,6 +194,8 @@ function buildScene(): SceneNodes {
       ...perimeter(storey.id, prefix),
       ...partitions(storey.id, prefix),
       ...rooms(storey.id, prefix, storey.label),
+      ...openings(storey.id, prefix),
+      ...furniture(storey.id, prefix),
     ]) {
       nodes[node.id as string] = node;
     }

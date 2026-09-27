@@ -276,6 +276,34 @@ function projector(
   ];
 }
 
+function drawPolygon(
+  doc: PdfDoc,
+  polygon: { points: readonly (readonly [number, number])[]; fill?: string; stroke?: string; weightMm?: number },
+  project: (p: readonly [number, number]) => [number, number],
+): void {
+  if (polygon.points.length < 3) return;
+  const [first, ...rest] = polygon.points.map(project);
+  doc.moveTo(first![0], first![1]);
+  for (const [px, py] of rest) doc.lineTo(px, py);
+  doc.closePath().lineWidth(mm(polygon.weightMm ?? 0.25));
+
+  if (polygon.fill && polygon.stroke) {
+    doc.fillAndStroke(polygon.fill, polygon.stroke);
+  } else if (polygon.fill) {
+    doc.fill(polygon.fill);
+  } else {
+    doc.stroke(polygon.stroke ?? INK);
+  }
+}
+
+/**
+ * Draw one level's plan.
+ *
+ * Order is load-bearing, not cosmetic. Walls are painted first, then the
+ * openings are knocked out of them in the sheet colour, then jambs and symbols
+ * are drawn on top. Emitting these in any other order either buries the
+ * symbols under the wall poché or leaves the openings solid.
+ */
 function drawPlan(
   doc: PdfDoc,
   drawing: PlanDrawing,
@@ -286,20 +314,23 @@ function drawPlan(
   const project = projector(placement, originX, originY);
 
   doc.save();
-  for (const polygon of drawing.polygons) {
-    if (polygon.points.length < 3) continue;
-    const [first, ...rest] = polygon.points.map(project);
+  for (const polygon of drawing.polygons) drawPolygon(doc, polygon, project);
+  doc.restore();
+
+  doc.save();
+  for (const knockOut of drawing.knockOuts) drawPolygon(doc, knockOut, project);
+  doc.restore();
+
+  doc.save();
+  for (const path of drawing.paths) {
+    if (path.points.length < 2) continue;
+    const [first, ...rest] = path.points.map(project);
     doc.moveTo(first![0], first![1]);
     for (const [px, py] of rest) doc.lineTo(px, py);
-    doc.closePath().lineWidth(mm(polygon.weightMm ?? 0.25));
-
-    if (polygon.fill && polygon.stroke) {
-      doc.fillAndStroke(polygon.fill, polygon.stroke);
-    } else if (polygon.fill) {
-      doc.fill(polygon.fill);
-    } else {
-      doc.stroke(polygon.stroke ?? INK);
-    }
+    doc.lineWidth(mm(path.weightMm));
+    if (path.dashed) doc.dash(mm(3), { space: mm(1.5) });
+    doc.stroke(path.stroke);
+    if (path.dashed) doc.undash();
   }
   doc.restore();
 

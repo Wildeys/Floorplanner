@@ -17,42 +17,31 @@
  * metres. Here that becomes `[x, y]` with y increasing "up" the page.
  */
 
-import {
-  calculateLevelMiters,
-  getWallPlanFootprint,
-} from "@pascal-app/core/wall";
+import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wall";
 
-/** A point in plan space, metres. */
-export type PlanPoint = readonly [number, number];
+import { deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
+import { INK, PEN, TEXT_MM } from "./pens.ts";
+import type {
+  PlanBounds,
+  PlanDrawing,
+  PlanLabel,
+  PlanPath,
+  PlanPoint,
+  PlanPolygon,
+  SceneNodeLike,
+  SceneNodes,
+} from "./plan-types.ts";
 
-export type PlanPolygon = {
-  readonly points: readonly PlanPoint[];
-  /** Poché fill, as on a cut wall. Omit for an outline-only shape. */
-  readonly fill?: string;
-  readonly stroke?: string;
-  readonly weightMm?: number;
-};
-
-export type PlanLabel = {
-  readonly at: PlanPoint;
-  readonly text: string;
-  /** Cap height on paper in millimetres — a typographic size, never scaled. */
-  readonly sizeMm?: number;
-  readonly align?: "left" | "center";
-  readonly bold?: boolean;
-};
-
-export type PlanDrawing = {
-  readonly polygons: readonly PlanPolygon[];
-  readonly labels: readonly PlanLabel[];
-};
-
-export type PlanBounds = {
-  readonly minX: number;
-  readonly minY: number;
-  readonly maxX: number;
-  readonly maxY: number;
-};
+export type {
+  PlanBounds,
+  PlanDrawing,
+  PlanLabel,
+  PlanPath,
+  PlanPoint,
+  PlanPolygon,
+  SceneNodeLike,
+  SceneNodes,
+} from "./plan-types.ts";
 
 export type DerivedLevel = {
   readonly id: string;
@@ -62,31 +51,9 @@ export type DerivedLevel = {
   /** Sum of the level's zone areas, m². */
   readonly floorAreaM2: number;
   readonly wallCount: number;
+  readonly openingCount: number;
+  readonly itemCount: number;
 };
-
-/**
- * The minimal shape this module needs from a scene node. The pascal schema is
- * far wider; narrowing here keeps the derivation honest about what it reads and
- * makes it trivial to construct fixtures in tests.
- */
-export type SceneNodeLike = {
-  readonly id: string;
-  readonly type?: string;
-  readonly name?: string;
-  readonly parentId?: string | null;
-  readonly start?: readonly [number, number];
-  readonly end?: readonly [number, number];
-  readonly thickness?: number;
-  readonly polygon?: readonly (readonly [number, number])[];
-  readonly baseElevation?: number;
-  readonly visible?: boolean;
-};
-
-export type SceneNodes = Readonly<Record<string, SceneNodeLike>>;
-
-const WALL_POCHE = "#1a1a1a";
-const ROOM_LABEL_MM = 2.2;
-const AREA_LABEL_MM = 1.8;
 
 function isVisible(node: SceneNodeLike): boolean {
   return node.visible !== false;
@@ -123,13 +90,13 @@ export function collectLevels(nodes: SceneNodes): SceneNodeLike[] {
     .sort((a, b) => (a.baseElevation ?? 0) - (b.baseElevation ?? 0));
 }
 
-function boundsOf(polygons: readonly PlanPolygon[]): PlanBounds {
+function boundsOf(shapes: readonly { points: readonly PlanPoint[] }[]): PlanBounds {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const polygon of polygons) {
-    for (const [x, y] of polygon.points) {
+  for (const shape of shapes) {
+    for (const [x, y] of shape.points) {
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
@@ -200,9 +167,9 @@ export function deriveWallPolygons(walls: readonly SceneNodeLike[]): PlanPolygon
     if (footprint.length < 3) continue;
     polygons.push({
       points: footprint.map((point) => [point.x, point.y] as PlanPoint),
-      fill: WALL_POCHE,
-      stroke: WALL_POCHE,
-      weightMm: 0.25,
+      fill: INK.poche,
+      stroke: INK.line,
+      weightMm: PEN.cut,
     });
   }
   return polygons;
@@ -211,7 +178,13 @@ export function deriveWallPolygons(walls: readonly SceneNodeLike[]): PlanPolygon
 export type DeriveOptions = {
   /** Include zone name and area tags. */
   readonly roomLabels?: boolean;
+  /** Include door / window type tags (D01, W01…). */
+  readonly openingMarks?: boolean;
+  /** Include furniture and fixture outlines. */
+  readonly furniture?: boolean;
 };
+
+const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
 
 /**
  * Derive one plan drawing per level, ordered from the lowest storey up.
@@ -224,35 +197,64 @@ export function derivePlanLevels(
   nodes: SceneNodes,
   options: DeriveOptions = {},
 ): DerivedLevel[] {
-  const { roomLabels = true } = options;
+  const { roomLabels = true, openingMarks = true, furniture = true } = options;
   const levels = collectLevels(nodes);
   const levelIds = new Set(levels.map((level) => level.id));
 
-  const wallsByLevel = new Map<string, SceneNodeLike[]>();
-  const zonesByLevel = new Map<string, SceneNodeLike[]>();
-
+  const byLevel = new Map<string, Map<string, SceneNodeLike[]>>();
   for (const node of Object.values(nodes)) {
     if (!isVisible(node)) continue;
-    if (node.type !== "wall" && node.type !== "zone") continue;
+    if (!node.type || !COLLECTED_TYPES.has(node.type)) continue;
     const levelId = findLevelAncestor(nodes, node.id, levelIds);
     if (!levelId) continue;
-    const bucket = node.type === "wall" ? wallsByLevel : zonesByLevel;
-    const existing = bucket.get(levelId);
-    if (existing) existing.push(node);
-    else bucket.set(levelId, [node]);
+    let buckets = byLevel.get(levelId);
+    if (!buckets) {
+      buckets = new Map();
+      byLevel.set(levelId, buckets);
+    }
+    const bucket = buckets.get(node.type);
+    if (bucket) bucket.push(node);
+    else buckets.set(node.type, [node]);
   }
 
   const derived: DerivedLevel[] = [];
   for (const level of levels) {
-    const walls = wallsByLevel.get(level.id) ?? [];
+    const buckets = byLevel.get(level.id) ?? new Map<string, SceneNodeLike[]>();
+    const walls = buckets.get("wall") ?? [];
     const polygons = deriveWallPolygons(walls);
     if (polygons.length === 0) continue;
 
-    const zones = zonesByLevel.get(level.id) ?? [];
+    const wallsById = new Map(walls.map((wall) => [wall.id, wall]));
+    const knockOuts: PlanPolygon[] = [];
+    const paths: PlanPath[] = [];
     const labels: PlanLabel[] = [];
-    let floorAreaM2 = 0;
 
-    for (const zone of zones) {
+    // Openings resolve against their host wall; one without a resolvable host
+    // is skipped rather than drawn adrift.
+    let openingCount = 0;
+    for (const type of ["door", "window"] as const) {
+      for (const node of buckets.get(type) ?? []) {
+        const wall = node.wallId ? wallsById.get(node.wallId) : undefined;
+        if (!wall) continue;
+        const opening = deriveOpening(node, wall, { showMarks: openingMarks });
+        if (!opening) continue;
+        openingCount += 1;
+        knockOuts.push(opening.knockOut);
+        paths.push(...opening.paths);
+        if (opening.label) labels.push(opening.label);
+      }
+    }
+
+    const itemPolygons: PlanPolygon[] = [];
+    if (furniture) {
+      for (const item of buckets.get("item") ?? []) {
+        const footprint = deriveItemFootprint(item);
+        if (footprint) itemPolygons.push(footprint);
+      }
+    }
+
+    let floorAreaM2 = 0;
+    for (const zone of buckets.get("zone") ?? []) {
       const polygon = zone.polygon;
       if (!polygon || polygon.length < 3) continue;
       const points = polygon.map((p) => [p[0], p[1]] as PlanPoint);
@@ -263,14 +265,14 @@ export function derivePlanLevels(
       labels.push({
         at: [cx, cy],
         text: (zone.name ?? "ROOM").toUpperCase(),
-        sizeMm: ROOM_LABEL_MM,
+        sizeMm: TEXT_MM.roomName,
         align: "center",
         bold: true,
       });
       labels.push({
         at: [cx, cy - 0.45],
         text: `${area.toFixed(2)} m²`,
-        sizeMm: AREA_LABEL_MM,
+        sizeMm: TEXT_MM.roomArea,
         align: "center",
       });
     }
@@ -278,10 +280,20 @@ export function derivePlanLevels(
     derived.push({
       id: level.id,
       name: level.name ?? "LEVEL",
-      drawing: { polygons, labels },
+      // Furniture sits below the cut plane, so it is drawn with the walls but
+      // knocked out by nothing — order within `polygons` keeps it under the
+      // wall poché where they overlap.
+      drawing: {
+        polygons: [...itemPolygons, ...polygons],
+        knockOuts,
+        paths,
+        labels,
+      },
       bounds: boundsOf(polygons),
       floorAreaM2,
       wallCount: walls.length,
+      openingCount,
+      itemCount: itemPolygons.length,
     });
   }
 
