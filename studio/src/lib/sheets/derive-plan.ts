@@ -21,6 +21,7 @@ import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wal
 
 import { annotationMargin, deriveDimensions } from "./derive-dimensions.ts";
 import { deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
+import { assignOpeningMarks, type OpeningMarks } from "./opening-marks.ts";
 import { MALDIVES_PROFILE, type UnitDisplay } from "./jurisdiction.ts";
 import { INK, MASONRY_HATCH, PEN, TEXT_MM } from "./pens.ts";
 import type {
@@ -254,6 +255,10 @@ export function derivePlanLevels(
     else buckets.set(node.type, [node]);
   }
 
+  // Marks span the whole model: the same door on two storeys is one type with
+  // a quantity of two, which is what a schedule has to say.
+  const marks = assignOpeningMarks(Object.values(nodes));
+
   const derived: DerivedLevel[] = [];
   for (const level of levels) {
     const buckets = byLevel.get(level.id) ?? new Map<string, SceneNodeLike[]>();
@@ -273,7 +278,10 @@ export function derivePlanLevels(
       for (const node of buckets.get(type) ?? []) {
         const wall = node.wallId ? wallsById.get(node.wallId) : undefined;
         if (!wall) continue;
-        const opening = deriveOpening(node, wall, { showMarks: openingMarks });
+        const opening = deriveOpening(node, wall, {
+          showMarks: openingMarks,
+          mark: marks.byNodeId.get(node.id),
+        });
         if (!opening) continue;
         openingCount += 1;
         knockOuts.push(opening.knockOut);
@@ -354,6 +362,11 @@ export function derivePlanLevels(
   }
 
   return derived;
+}
+
+/** The project-wide door and window schedule (FR-505, FR-506). */
+export function deriveOpeningSchedule(nodes: SceneNodes): OpeningMarks {
+  return assignOpeningMarks(Object.values(nodes));
 }
 
 export function boundsExtent(bounds: PlanBounds): { width: number; height: number } {

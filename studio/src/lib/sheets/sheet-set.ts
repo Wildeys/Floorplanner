@@ -42,7 +42,7 @@ import {
 
 const INK = "#111111";
 const HAIRLINE = "#888888";
-const WATERMARK = "#c8c8c8";
+const WATERMARK = "#d4d4d4";
 
 export type SheetSetOptions = {
   readonly profile: JurisdictionProfile;
@@ -411,21 +411,27 @@ function drawPlan(
   }
   doc.restore();
 
-  doc.save();
   for (const label of drawing.labels) {
     const [px, py] = project(label.at);
     const size = mm(label.sizeMm ?? 2);
-    const boxWidth = mm(40);
-    doc
-      .font(label.bold ? "Helvetica-Bold" : "Helvetica")
-      .fontSize(size)
-      .fillColor(INK)
-      .text(label.text, px - boxWidth / 2, py - size / 2, {
-        width: boxWidth,
-        align: label.align ?? "center",
-      });
+
+    doc.save();
+    doc.font(label.bold ? "Helvetica-Bold" : "Helvetica").fontSize(size).fillColor(INK);
+
+    // Size the box to the text rather than using a fixed wide one: a 40 mm box
+    // centred near the sheet edge runs off the page and the label is clipped.
+    const boxWidth = doc.widthOfString(label.text) + mm(2);
+
+    if (label.rotateDeg) {
+      doc.rotate(label.rotateDeg, { origin: [px, py] });
+    }
+    doc.text(label.text, px - boxWidth / 2, py - size / 2, {
+      width: boxWidth,
+      align: label.align ?? "center",
+      lineBreak: false,
+    });
+    doc.restore();
   }
-  doc.restore();
 }
 
 function drawNorthArrow(doc: PdfDoc, x: number, y: number): void {
@@ -473,16 +479,25 @@ function drawSheetCaption(
   doc.restore();
 }
 
+/**
+ * The preview stamp.
+ *
+ * It has to be unmissable — this file is not for submission — but a drawing
+ * nobody can read is not a useful preview either. Kept large enough to be
+ * obvious at a glance and light enough to read dimensions and door swings
+ * straight through.
+ */
 function drawWatermark(doc: PdfDoc, page: Page, text: string): void {
   doc.save();
   doc.rotate(-32, { origin: [page.widthPt / 2, page.heightPt / 2] });
   doc
     .font("Helvetica-Bold")
-    .fontSize(mm(22))
-    .fillColor(WATERMARK, 0.45)
-    .text(text, 0, page.heightPt / 2 - mm(12), {
+    .fontSize(mm(11))
+    .fillColor(WATERMARK, 0.3)
+    .text(text, 0, page.heightPt / 2 - mm(6), {
       width: page.widthPt,
       align: "center",
+      lineBreak: false,
     });
   doc.restore();
 }

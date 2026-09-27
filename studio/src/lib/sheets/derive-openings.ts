@@ -21,6 +21,7 @@
  */
 
 import { planFootprintCorners } from "@pascal-app/core/plan-footprint";
+import { getScaledDimensions } from "@pascal-app/core/schema";
 
 import { INK, PEN, TEXT_MM } from "./pens.ts";
 import type { PlanLabel, PlanPath, PlanPoint, PlanPolygon, SceneNodeLike } from "./plan-types.ts";
@@ -105,7 +106,7 @@ function arc(
 export function deriveOpening(
   node: SceneNodeLike,
   wall: SceneNodeLike,
-  options: { showMarks: boolean },
+  options: { showMarks: boolean; mark?: string },
 ): DerivedOpening | null {
   const geometry = wallGeometry(wall);
   if (!geometry) return null;
@@ -187,7 +188,10 @@ export function deriveOpening(
   }
 
   // The type tag (D01, W01…) as printed on the reference schedules (FR-15).
-  const mark = node.mark ?? node.name;
+  // The caller assigns it across the whole model; the node's own `mark` is a
+  // fallback, and its `name` is deliberately not used — that is an instance
+  // label ("Door 1"), which cannot be scheduled.
+  const mark = options.mark ?? node.mark;
   const label: PlanLabel | null =
     options.showMarks && mark
       ? {
@@ -199,6 +203,30 @@ export function deriveOpening(
       : null;
 
   return { knockOut, paths, label };
+}
+
+/**
+ * The plan size of a placed item, in metres.
+ *
+ * A real placed item has no top-level `dimensions`: its size lives on the
+ * catalogue asset and is multiplied by the node's own scale, which is what
+ * `getScaledDimensions` does. Reading `item.dimensions` directly returns
+ * undefined for everything the catalogue places, which silently drops every
+ * piece of furniture from the drawing.
+ */
+export function itemDimensions(item: SceneNodeLike): readonly number[] | null {
+  const asset = item.asset;
+  if (asset && Array.isArray(asset.dimensions)) {
+    try {
+      return getScaledDimensions(item as never);
+    } catch {
+      // A malformed asset or missing scale: fall through to the plain field.
+    }
+    const [w, h, d] = asset.dimensions;
+    const scale = item.scale ?? [1, 1, 1];
+    return [w * (scale[0] ?? 1), h * (scale[1] ?? 1), d * (scale[2] ?? 1)];
+  }
+  return item.dimensions ?? null;
 }
 
 /**
@@ -214,14 +242,14 @@ export function deriveOpening(
  */
 export function deriveItemFootprint(item: SceneNodeLike): PlanPolygon | null {
   const position = item.position;
-  const dimensions = item.dimensions;
+  const dimensions = itemDimensions(item);
   if (!position || !dimensions) return null;
-  if (dimensions[0] <= 0 || dimensions[2] <= 0) return null;
+  if (!(dimensions[0]! > 0) || !(dimensions[2]! > 0)) return null;
 
   const rotationY = item.rotation?.[1] ?? 0;
   const corners = planFootprintCorners(
-    [position[0], position[1] ?? 0, position[2] ?? 0],
-    [dimensions[0], dimensions[1] ?? 0, dimensions[2]],
+    [position[0]!, position[1] ?? 0, position[2] ?? 0],
+    [dimensions[0]!, dimensions[1] ?? 0, dimensions[2]!],
     rotationY,
   );
   if (corners.length < 3) return null;

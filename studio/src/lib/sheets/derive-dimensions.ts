@@ -129,17 +129,25 @@ function dimensionLabel(
   metres: number,
   at: PlanPoint,
   units: UnitDisplay,
+  side: DimensionSide,
 ): PlanLabel[] {
   const { primary, secondary } = formatDimension(metres, units);
+  // Vertical chains read bottom-to-top, as on the reference sheets.
+  const rotateDeg = side === "left" ? -90 : undefined;
+  // The second line sits inboard of the first, which is a different direction
+  // for each chain once the text is turned.
+  const second: PlanPoint = side === "left" ? [at[0] - 0.28, at[1]] : [at[0], at[1] - 0.28];
+
   const labels: PlanLabel[] = [
-    { at, text: primary, sizeMm: TEXT_MM.dimension, align: "center" },
+    { at, text: primary, sizeMm: TEXT_MM.dimension, align: "center", rotateDeg },
   ];
   if (secondary) {
     labels.push({
-      at: [at[0], at[1] - 0.28],
+      at: second,
       text: secondary,
       sizeMm: TEXT_MM.dimension * 0.85,
       align: "center",
+      rotateDeg,
     });
   }
   return labels;
@@ -182,7 +190,7 @@ function chain(
     const length = to - from;
     if (length < STATION_TOLERANCE_M) continue;
     const mid = (from + to) / 2;
-    labels.push(...dimensionLabel(length, point(mid, GEOMETRY.textOffset), units));
+    labels.push(...dimensionLabel(length, point(mid, GEOMETRY.textOffset), units, side));
   }
 
   return { paths, labels };

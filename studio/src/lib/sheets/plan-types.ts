@@ -47,6 +47,12 @@ export type PlanLabel = {
   readonly sizeMm?: number;
   readonly align?: "left" | "center";
   readonly bold?: boolean;
+  /**
+   * Rotation in degrees, anticlockwise on the page. Vertical dimension text is
+   * turned so it reads along its own chain — which is both the drawing
+   * convention and what stops a wide label box running off the sheet.
+   */
+  readonly rotateDeg?: number;
 };
 
 /**
@@ -94,14 +100,22 @@ export type SceneNodeLike = {
   // Door / window. `position[0]` is metres from the host wall's start.
   readonly wallId?: string;
   readonly width?: number;
+  readonly height?: number;
   readonly mark?: string;
   readonly hingesSide?: string;
   readonly swingDirection?: string;
 
   // Item (furniture) — world position, size and Y rotation.
   readonly position?: readonly number[];
-  readonly dimensions?: readonly number[];
   readonly rotation?: readonly number[];
+  /**
+   * Catalogue-placed items carry no top-level `dimensions`; their size is the
+   * asset's dimensions multiplied by `scale`. The plain field is kept for
+   * hand-built nodes and fixtures.
+   */
+  readonly dimensions?: readonly number[];
+  readonly scale?: readonly number[];
+  readonly asset?: { readonly dimensions?: readonly number[] };
 };
 
 export type SceneNodes = Readonly<Record<string, SceneNodeLike>>;
