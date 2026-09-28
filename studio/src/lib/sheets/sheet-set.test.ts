@@ -8,7 +8,7 @@ import {
   type ProjectMetadata,
   sheetCodeAt,
 } from "./jurisdiction.ts";
-import { drawingViewport, renderSheetSet, resolveSheetScale } from "./sheet-set.ts";
+import { drawingViewport, floorPlanTitle, renderSheetSet, resolveSheetScale } from "./sheet-set.ts";
 import { mmToPoints, pageSizePoints, pointsToMm } from "./scale.ts";
 
 const PROJECT: ProjectMetadata = {
@@ -176,11 +176,12 @@ test("a set renders one page per level at true scale", async () => {
   for (const sheet of sheets) {
     assert.equal(sheet.scale, 100);
     assert.equal(sheet.atDefaultScale, true);
-    // The placed width is the sheet extent: the building (19.092 m + 0.15 m of
-    // wall) plus the left-hand dimension chain and grid bubbles, at 1:100.
+    // The placed width is the building (19.092 m + 0.15 m of wall = 192.42 mm
+    // at 1:100) plus the annotation's paper margin, which is a constant 28.7 mm
+    // whatever the scale.
     assert.ok(
-      Math.abs(sheet.planWidthMm - 225.2) < 0.5,
-      `expected ~225.2 mm, got ${sheet.planWidthMm}`,
+      Math.abs(sheet.planWidthMm - 221.1) < 0.5,
+      `expected ~221.1 mm, got ${sheet.planWidthMm}`,
     );
   }
 });
@@ -299,4 +300,41 @@ test("the emitted page is physically A3 landscape", async () => {
   assert.ok(match);
   assert.ok(Math.abs(pointsToMm(Number(match[3]) - Number(match[1])) - 420) < 0.5);
   assert.ok(Math.abs(pointsToMm(Number(match[4]) - Number(match[2])) - 297) < 0.5);
+});
+
+test("a small building is enlarged to the next standard plan scale", () => {
+  const viewport = { x: 0, y: 0, width: mmToPoints(280), height: mmToPoints(180) };
+
+  // 5.5 m at 1:100 is 55 mm across a 280 mm viewport — the sheet reads empty.
+  // A draughtsman draws that at 1:50.
+  const small = resolveSheetScale(5.5, 3.5, viewport, 100, 50);
+  assert.equal(small.scale, 50, "stepped finer to fill the sheet");
+  assert.equal(small.atRequested, false);
+
+  // But never past the profile's finest plan scale: 1:20 is a detail, not a plan.
+  const tiny = resolveSheetScale(1.2, 1.0, viewport, 100, 50);
+  assert.equal(tiny.scale, 50, "clamped at the finest plan scale");
+});
+
+test("a building that suits 1:100 is left at 1:100", () => {
+  const viewport = { x: 0, y: 0, width: mmToPoints(280), height: mmToPoints(180) };
+  const reference = resolveSheetScale(19.092, 8.487, viewport, 100, 50);
+  assert.equal(reference.scale, 100, "1:50 would not fit, so the convention holds");
+  assert.equal(reference.atRequested, true);
+});
+
+test("an oversized building still steps coarser, not finer", () => {
+  const viewport = { x: 0, y: 0, width: mmToPoints(280), height: mmToPoints(180) };
+  const huge = resolveSheetScale(40, 20, viewport, 100, 50);
+  assert.ok(huge.scale > 100, `expected coarser than 1:100, got 1:${huge.scale}`);
+});
+
+test("floor plan titles never double a word", () => {
+  assert.equal(floorPlanTitle("Ground"), "GROUND FLOOR PLAN");
+  // A level literally named "Level" must not print "LEVEL FLOOR PLAN".
+  assert.equal(floorPlanTitle("Level"), "FLOOR PLAN");
+  assert.equal(floorPlanTitle(""), "FLOOR PLAN");
+  // Nor should an already-qualified name gain a second "FLOOR".
+  assert.equal(floorPlanTitle("Ground Floor"), "GROUND FLOOR PLAN");
+  assert.equal(floorPlanTitle("Roof Plan"), "ROOF PLAN");
 });

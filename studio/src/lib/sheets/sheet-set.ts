@@ -16,8 +16,10 @@
  *    computed to exclude it, so the council's stamp always has clear paper.
  */
 
+import { annotationMarginMm, deriveDimensions } from "./derive-dimensions.ts";
 import {
   type DerivedLevel,
+  type PlanBounds,
   type PlanDrawing,
   type PlanPoint,
   boundsExtent,
@@ -53,6 +55,9 @@ export type SheetSetOptions = {
    * architect release must carry one (FR-531); a released set passes null.
    */
   readonly watermark?: string | null;
+  /** Dimension chains and grid bubbles. On by default. */
+  readonly dimensions?: boolean;
+  readonly gridBubbles?: boolean;
 };
 
 export type EmittedSheet = {
@@ -115,16 +120,31 @@ export function resolveSheetScale(
   planHeightM: number,
   viewport: BoxPt,
   requested: ScaleDenominator,
+  finest: ScaleDenominator = requested,
 ): { scale: ScaleDenominator; atRequested: boolean } {
   const plan = { width: planWidthM, height: planHeightM };
-  if (placePlanAtScale(plan, viewport, requested).fits) {
-    return { scale: requested, atRequested: true };
+  const fits = (scale: ScaleDenominator) => placePlanAtScale(plan, viewport, scale).fits;
+
+  if (fits(requested)) {
+    /*
+     * The requested scale fits — but on a small building it can leave the sheet
+     * almost empty: a 5.5 m house at 1:100 is 55 mm across a 280 mm viewport.
+     * A draughtsman would draw that at 1:50. Step finer while it still fits,
+     * never past the profile's finest *plan* scale, because past that the
+     * drawing stops reading as a plan and starts reading as a detail.
+     */
+    let best = requested;
+    for (const candidate of STANDARD_SCALES) {
+      if (candidate >= requested || candidate < finest) continue;
+      if (fits(candidate)) best = Math.min(best, candidate);
+    }
+    return { scale: best, atRequested: best === requested };
   }
+
+  // Too big for the requested scale: step coarser rather than squash it.
   for (const candidate of STANDARD_SCALES) {
     if (candidate <= requested) continue;
-    if (placePlanAtScale(plan, viewport, candidate).fits) {
-      return { scale: candidate, atRequested: false };
-    }
+    if (fits(candidate)) return { scale: candidate, atRequested: false };
   }
   return { scale: requested, atRequested: false };
 }
@@ -471,7 +491,7 @@ function drawSheetCaption(
     .fontSize(mm(2))
     .fillColor(INK)
     .text(
-      atRequested ? `SCALE 1:${scale}` : `SCALE 1:${scale} (reduced to fit sheet)`,
+      atRequested ? `SCALE 1:${scale}` : `SCALE 1:${scale} (not the standard 1:100)`,
       viewport.x + mm(4),
       baseline + mm(4),
       { width: viewport.width },
@@ -506,7 +526,7 @@ function drawWatermark(doc: PdfDoc, page: Page, text: string): void {
  * Compose and emit the architectural sheet set.
  */
 export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSetResult> {
-  const { profile, project, levels, watermark = null } = options;
+  const { profile, project, levels, watermark = null, dimensions = true, gridBubbles = true } = options;
   if (levels.length === 0) {
     throw new Error("Cannot produce a drawing set: the model has no levels with geometry.");
   }
@@ -525,27 +545,65 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
   levels.forEach((level, index) => {
     if (index > 0) doc.addPage({ size: [pageSize[0], pageSize[1]], margin: 0 });
 
-    // Placement uses the sheet extent so the dimension chains are on the page.
-    const extent = boundsExtent(level.sheetBounds);
+    /*
+     * Scale is chosen against the *building*, in a viewport already reduced by
+     * the annotation's paper margin. Choosing it against a bounds that already
+     * included the annotation would be circular: the margin is a paper
+     * dimension, so how much plan space it occupies depends on the scale.
+     */
+    const marginMm = annotationMarginMm(gridBubbles);
+    const buildingViewport: BoxPt = {
+      x: viewport.x + mm(marginMm),
+      y: viewport.y,
+      width: Math.max(viewport.width - mm(marginMm), 1),
+      height: Math.max(viewport.height - mm(marginMm), 1),
+    };
+
+    const building = boundsExtent(level.bounds);
     const { scale, atRequested } = resolveSheetScale(
-      extent.width,
-      extent.height,
-      viewport,
+      building.width,
+      building.height,
+      buildingViewport,
       requestedScale,
+      profile.finestPlanScale,
     );
+
+    // Now the scale is known, the annotation can be built at the right size.
+    const annotations = dimensions
+      ? deriveDimensions(level.walls, level.bounds, {
+          units: profile.units,
+          gridBubbles,
+          scale,
+        })
+      : { paths: [], labels: [] };
+
+    const marginPlan = (marginMm * scale) / 1000;
+    const sheetBounds: PlanBounds = {
+      minX: level.bounds.minX - marginPlan,
+      minY: level.bounds.minY,
+      maxX: level.bounds.maxX,
+      maxY: level.bounds.maxY + marginPlan,
+    };
+    const extent = boundsExtent(sheetBounds);
     const placement = placePlanAtScale(
       { width: extent.width, height: extent.height },
       viewport,
       scale,
     );
 
-    const title = `${level.name.toUpperCase()} FLOOR PLAN`;
+    const drawing: PlanDrawing = {
+      ...level.drawing,
+      paths: [...level.drawing.paths, ...annotations.paths],
+      labels: [...level.drawing.labels, ...annotations.labels],
+    };
+
+    const title = floorPlanTitle(level.name);
     const code = sheetCodeAt(
       planSheet ?? { code: baseCode, title, scale, repeat: "per-level" },
       index,
     );
 
-    drawPlan(doc, level.drawing, placement, level.sheetBounds.minX, level.sheetBounds.minY);
+    drawPlan(doc, drawing, placement, sheetBounds.minX, sheetBounds.minY);
     drawSheetCaption(doc, viewport, title, scale, atRequested);
     drawNorthArrow(doc, viewport.x + viewport.width - mm(12), viewport.y + mm(12));
     drawStampReserve(doc, profile, page);
@@ -564,6 +622,21 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
 
   doc.end();
   return { pdf: await done, sheets: emitted };
+}
+
+/**
+ * The drawing title for a storey.
+ *
+ * A level called "Level" would otherwise print "LEVEL FLOOR PLAN", and one
+ * already called "Ground Floor" would print "GROUND FLOOR FLOOR PLAN". Both
+ * read as a bug on a submission sheet.
+ */
+export function floorPlanTitle(levelName: string): string {
+  const name = levelName.trim().toUpperCase();
+  if (!name || name === "LEVEL") return "FLOOR PLAN";
+  if (name.endsWith("PLAN")) return name;
+  if (name.includes("FLOOR")) return `${name} PLAN`;
+  return `${name} FLOOR PLAN`;
 }
 
 /** A dimension string as the profile prints it, for callers building labels. */

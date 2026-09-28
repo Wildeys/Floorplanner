@@ -16,9 +16,14 @@
  *
  * ## Units
  *
- * Offsets and tick sizes are expressed in plan metres, so they scale with the
- * drawing and keep the same printed proportion at any scale. Pen widths and
- * text sizes stay in paper millimetres, because those are typographic.
+ * Every offset and tick here is a **paper millimetre**, converted to plan
+ * metres against the drawing's scale. A dimension chain sits the same distance
+ * off the building on a 1:50 sheet as on a 1:200 one — that is what makes a set
+ * look consistent. Expressing these in plan metres instead makes the whole
+ * apparatus swell and shrink with the scale, which is wrong and obvious.
+ *
+ * This is why the annotation is derived by the sheet engine rather than with
+ * the geometry: it cannot be built until the scale is known.
  */
 
 import { formatDimension, type UnitDisplay } from "./jurisdiction.ts";
@@ -31,25 +36,44 @@ const STATION_TOLERANCE_M = 0.005;
 /** A wall within this of an axis counts as running along it. */
 const AXIS_TOLERANCE = 0.02;
 
-/** Plan-metre geometry of the dimension apparatus, at 1:100 ≈ mm × 10. */
-const GEOMETRY = {
+/** The dimension apparatus, in paper millimetres. */
+const PAPER_MM = {
   /** Gap between the building and the first chain. */
-  firstChainOffset: 0.9,
+  firstChainOffset: 9,
   /** Gap between the running chain and the overall chain. */
-  chainSpacing: 0.9,
+  chainSpacing: 8,
   /** How far extension lines overshoot the dimension line. */
-  extensionOvershoot: 0.15,
+  extensionOvershoot: 1.5,
   /** Gap between the building and the start of an extension line. */
-  extensionGap: 0.2,
+  extensionGap: 2,
   /** Half-length of the 45° architectural tick. */
-  tickHalf: 0.12,
+  tickHalf: 1.2,
   /** Text baseline offset above the dimension line. */
-  textOffset: 0.18,
+  textOffset: 1.8,
   /** Grid bubble radius. */
-  bubbleRadius: 0.38,
-  /** Gap between the outer chain and the bubbles. */
-  bubbleOffset: 0.95,
+  bubbleRadius: 3.2,
+  /** Gap between the outer chain and the bubble centres. */
+  bubbleOffset: 7,
 } as const;
+
+/** Paper millimetres → plan metres at a given scale. 10 mm at 1:100 is 1 m. */
+function toPlan(paperMm: number, scale: number): number {
+  return (paperMm * scale) / 1000;
+}
+
+/** The apparatus resolved into plan metres for one scale. */
+function geometryFor(scale: number) {
+  return {
+    firstChainOffset: toPlan(PAPER_MM.firstChainOffset, scale),
+    chainSpacing: toPlan(PAPER_MM.chainSpacing, scale),
+    extensionOvershoot: toPlan(PAPER_MM.extensionOvershoot, scale),
+    extensionGap: toPlan(PAPER_MM.extensionGap, scale),
+    tickHalf: toPlan(PAPER_MM.tickHalf, scale),
+    textOffset: toPlan(PAPER_MM.textOffset, scale),
+    bubbleRadius: toPlan(PAPER_MM.bubbleRadius, scale),
+    bubbleOffset: toPlan(PAPER_MM.bubbleOffset, scale),
+  };
+}
 
 export type DimensionSide = "top" | "left";
 
@@ -113,8 +137,8 @@ export function dimensionStations(
 }
 
 /** The 45° slash the reference uses in place of an arrowhead. */
-function tick(at: PlanPoint): PlanPath {
-  const h = GEOMETRY.tickHalf;
+function tick(at: PlanPoint, tickHalf: number): PlanPath {
+  const h = tickHalf;
   return {
     points: [
       [at[0] - h, at[1] - h],
@@ -130,13 +154,15 @@ function dimensionLabel(
   at: PlanPoint,
   units: UnitDisplay,
   side: DimensionSide,
+  geometry: ReturnType<typeof geometryFor>,
 ): PlanLabel[] {
   const { primary, secondary } = formatDimension(metres, units);
   // Vertical chains read bottom-to-top, as on the reference sheets.
   const rotateDeg = side === "left" ? -90 : undefined;
   // The second line sits inboard of the first, which is a different direction
   // for each chain once the text is turned.
-  const second: PlanPoint = side === "left" ? [at[0] - 0.28, at[1]] : [at[0], at[1] - 0.28];
+  const gap = geometry.textOffset * 1.6;
+  const second: PlanPoint = side === "left" ? [at[0] - gap, at[1]] : [at[0], at[1] - gap];
 
   const labels: PlanLabel[] = [
     { at, text: primary, sizeMm: TEXT_MM.dimension, align: "center", rotateDeg },
@@ -165,6 +191,7 @@ function chain(
   at: number,
   side: DimensionSide,
   units: UnitDisplay,
+  geometry: ReturnType<typeof geometryFor>,
 ): DerivedAnnotations {
   const paths: PlanPath[] = [];
   const labels: PlanLabel[] = [];
@@ -181,7 +208,7 @@ function chain(
   });
 
   for (const station of stations) {
-    paths.push(tick(point(station, 0)));
+    paths.push(tick(point(station, 0), geometry.tickHalf));
   }
 
   for (let i = 0; i < stations.length - 1; i += 1) {
@@ -190,7 +217,7 @@ function chain(
     const length = to - from;
     if (length < STATION_TOLERANCE_M) continue;
     const mid = (from + to) / 2;
-    labels.push(...dimensionLabel(length, point(mid, GEOMETRY.textOffset), units, side));
+    labels.push(...dimensionLabel(length, point(mid, geometry.textOffset), units, side, geometry));
   }
 
   return { paths, labels };
@@ -200,6 +227,8 @@ export type DimensionOptions = {
   readonly units: UnitDisplay;
   /** Lettered and numbered bubbles at each station, as on the reference. */
   readonly gridBubbles?: boolean;
+  /** The scale the sheet will be drawn at — paper offsets convert against it. */
+  readonly scale: number;
 };
 
 /**
@@ -214,23 +243,24 @@ export function deriveDimensions(
   bounds: PlanBounds,
   options: DimensionOptions,
 ): DerivedAnnotations {
-  const { units, gridBubbles = true } = options;
+  const { units, gridBubbles = true, scale } = options;
+  const geometry = geometryFor(scale);
   const stations = dimensionStations(walls, bounds);
 
   const paths: PlanPath[] = [];
   const labels: PlanLabel[] = [];
 
-  const topLine = bounds.maxY + GEOMETRY.firstChainOffset;
-  const leftLine = bounds.minX - GEOMETRY.firstChainOffset;
-  const topOverall = topLine + GEOMETRY.chainSpacing;
-  const leftOverall = leftLine - GEOMETRY.chainSpacing;
+  const topLine = bounds.maxY + geometry.firstChainOffset;
+  const leftLine = bounds.minX - geometry.firstChainOffset;
+  const topOverall = topLine + geometry.chainSpacing;
+  const leftOverall = leftLine - geometry.chainSpacing;
 
   // Extension lines carry each station out to the chains.
   for (const x of stations.x) {
     paths.push({
       points: [
-        [x, bounds.maxY + GEOMETRY.extensionGap],
-        [x, topOverall + GEOMETRY.extensionOvershoot],
+        [x, bounds.maxY + geometry.extensionGap],
+        [x, topOverall + geometry.extensionOvershoot],
       ],
       stroke: INK.annotation,
       weightMm: PEN.annotation,
@@ -239,8 +269,8 @@ export function deriveDimensions(
   for (const y of stations.y) {
     paths.push({
       points: [
-        [bounds.minX - GEOMETRY.extensionGap, y],
-        [leftOverall - GEOMETRY.extensionOvershoot, y],
+        [bounds.minX - geometry.extensionGap, y],
+        [leftOverall - geometry.extensionOvershoot, y],
       ],
       stroke: INK.annotation,
       weightMm: PEN.annotation,
@@ -248,15 +278,15 @@ export function deriveDimensions(
   }
 
   const running = [
-    chain(stations.x, topLine, "top", units),
-    chain(stations.y, leftLine, "left", units),
+    chain(stations.x, topLine, "top", units, geometry),
+    chain(stations.y, leftLine, "left", units, geometry),
   ];
   // The overall chain spans the same end gridlines as the running chain,
   // ignoring the intermediate ones. Measuring it to the outer bounds instead
   // would print an overall that does not equal the sum of its own bays.
   const overall = [
-    chain(endpoints(stations.x), topOverall, "top", units),
-    chain(endpoints(stations.y), leftOverall, "left", units),
+    chain(endpoints(stations.x), topOverall, "top", units, geometry),
+    chain(endpoints(stations.y), leftOverall, "left", units, geometry),
   ];
 
   for (const part of [...running, ...overall]) {
@@ -265,9 +295,9 @@ export function deriveDimensions(
   }
 
   if (gridBubbles) {
-    const bubbleY = topOverall + GEOMETRY.bubbleOffset;
+    const bubbleY = topOverall + geometry.bubbleOffset;
     stations.x.forEach((x, index) => {
-      paths.push(circle([x, bubbleY], GEOMETRY.bubbleRadius));
+      paths.push(circle([x, bubbleY], geometry.bubbleRadius));
       labels.push({
         at: [x, bubbleY - 0.12],
         text: gridLetter(index),
@@ -276,10 +306,10 @@ export function deriveDimensions(
       });
     });
 
-    const bubbleX = leftOverall - GEOMETRY.bubbleOffset;
+    const bubbleX = leftOverall - geometry.bubbleOffset;
     // Numbered upward, so 1 is at the bottom of the sheet as drawn.
     stations.y.forEach((y, index) => {
-      paths.push(circle([bubbleX, y], GEOMETRY.bubbleRadius));
+      paths.push(circle([bubbleX, y], geometry.bubbleRadius));
       labels.push({
         at: [bubbleX, y - 0.12],
         text: String(index + 1),
@@ -321,9 +351,15 @@ function circle(centre: PlanPoint, radius: number, segments = 24): PlanPath {
   return { points, stroke: INK.annotation, weightMm: PEN.annotation };
 }
 
-/** Extra plan-space margin the annotations need beyond the building itself. */
-export function annotationMargin(gridBubbles: boolean): number {
+/**
+ * Paper millimetres the annotation needs beyond the building on each side.
+ *
+ * Returned in paper units because the sheet engine subtracts it from the
+ * viewport *before* choosing a scale. Doing it the other way round is circular:
+ * the margin would depend on the scale that depends on the margin.
+ */
+export function annotationMarginMm(gridBubbles: boolean): number {
   const chains =
-    GEOMETRY.firstChainOffset + GEOMETRY.chainSpacing + GEOMETRY.extensionOvershoot;
-  return gridBubbles ? chains + GEOMETRY.bubbleOffset + GEOMETRY.bubbleRadius : chains;
+    PAPER_MM.firstChainOffset + PAPER_MM.chainSpacing + PAPER_MM.extensionOvershoot;
+  return gridBubbles ? chains + PAPER_MM.bubbleOffset + PAPER_MM.bubbleRadius : chains;
 }

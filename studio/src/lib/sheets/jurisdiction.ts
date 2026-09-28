@@ -85,7 +85,14 @@ export type JurisdictionProfile = {
   readonly titleBlockFields: readonly TitleBlockField[];
   readonly stampReserve: StampReserve;
   readonly units: UnitDisplay;
+  /** The scale plans are drawn at when the building suits it. */
   readonly defaultPlanScale: ScaleDenominator;
+  /**
+   * The finest scale a *plan* may be enlarged to when the building is small
+   * enough to leave the sheet mostly empty. Plans are conventionally 1:100;
+   * 1:50 is still a plan, while 1:20 reads as a detail.
+   */
+  readonly finestPlanScale: ScaleDenominator;
   readonly sheets: readonly SheetDefinition[];
 };
 
@@ -124,6 +131,7 @@ export const MALDIVES_PROFILE: JurisdictionProfile = {
   },
   units: { primary: "mm", secondary: "ft-in" },
   defaultPlanScale: 100,
+  finestPlanScale: 50,
   sheets: [
     { code: "A.00", title: "SITE PLAN", scale: 200, repeat: "single" },
     { code: "A.01", title: "FLOOR PLAN", scale: 100, repeat: "per-level" },

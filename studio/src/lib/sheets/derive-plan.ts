@@ -19,10 +19,8 @@
 
 import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wall";
 
-import { annotationMargin, deriveDimensions } from "./derive-dimensions.ts";
 import { deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
 import { assignOpeningMarks, type OpeningMarks } from "./opening-marks.ts";
-import { MALDIVES_PROFILE, type UnitDisplay } from "./jurisdiction.ts";
 import { INK, MASONRY_HATCH, PEN, TEXT_MM } from "./pens.ts";
 import type {
   PlanBounds,
@@ -53,11 +51,11 @@ export type DerivedLevel = {
   /** The building itself — the mitred outer face of its walls. */
   readonly bounds: PlanBounds;
   /**
-   * What the sheet must reserve: the building plus its dimension chains and
-   * grid bubbles. Kept separate from `bounds` because area and geometry work
-   * asks about the building, while placement asks about the drawing.
+   * The level's walls, kept so the sheet engine can derive dimension chains
+   * once it knows the scale. Annotation offsets are paper dimensions, so they
+   * cannot be built here.
    */
-  readonly sheetBounds: PlanBounds;
+  readonly walls: readonly SceneNodeLike[];
   /** Sum of the level's zone areas, m². */
   readonly floorAreaM2: number;
   readonly wallCount: number;
@@ -205,13 +203,7 @@ export type DeriveOptions = {
   readonly openingMarks?: boolean;
   /** Include furniture and fixture outlines. */
   readonly furniture?: boolean;
-  /** Include dimension chains and grid bubbles. */
-  readonly dimensions?: boolean;
-  /** Bubble each dimension station with a grid letter / number. */
-  readonly gridBubbles?: boolean;
   readonly wallFill?: WallFill;
-  /** Unit display for dimension text. Defaults to the Maldives profile. */
-  readonly units?: UnitDisplay;
 };
 
 const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
@@ -231,10 +223,7 @@ export function derivePlanLevels(
     roomLabels = true,
     openingMarks = true,
     furniture = true,
-    dimensions = true,
-    gridBubbles = true,
     wallFill = "solid",
-    units = MALDIVES_PROFILE.units,
   } = options;
   const levels = collectLevels(nodes);
   const levelIds = new Set(levels.map((level) => level.id));
@@ -322,24 +311,6 @@ export function derivePlanLevels(
       });
     }
 
-    // Dimensions measure the building, so they are derived from the wall
-    // bounds — then the level's own bounds are grown to include the annotation
-    // so the sheet reserves room for it rather than cropping it away.
-    const bounds = boundsOf(polygons);
-    let sheetBounds = bounds;
-    if (dimensions) {
-      const annotations = deriveDimensions(walls, bounds, { units, gridBubbles });
-      paths.push(...annotations.paths);
-      labels.push(...annotations.labels);
-      const margin = annotationMargin(gridBubbles);
-      sheetBounds = {
-        minX: bounds.minX - margin,
-        minY: bounds.minY,
-        maxX: bounds.maxX,
-        maxY: bounds.maxY + margin,
-      };
-    }
-
     derived.push({
       id: level.id,
       name: level.name ?? "LEVEL",
@@ -352,8 +323,8 @@ export function derivePlanLevels(
         paths,
         labels,
       },
-      bounds,
-      sheetBounds,
+      bounds: boundsOf(polygons),
+      walls,
       floorAreaM2,
       wallCount: walls.length,
       openingCount,

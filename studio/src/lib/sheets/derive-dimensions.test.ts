@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { annotationMargin, deriveDimensions, dimensionStations, gridLetter } from "./derive-dimensions.ts";
+import {
+  annotationMarginMm,
+  deriveDimensions,
+  dimensionStations,
+  gridLetter,
+} from "./derive-dimensions.ts";
 import { derivePlanLevels } from "./derive-plan.ts";
 import { MALDIVES_PROFILE } from "./jurisdiction.ts";
 import { PEN } from "./pens.ts";
@@ -78,7 +83,7 @@ test("running dimensions read the real distances, in both units", () => {
     ...rectangleWalls(10, 6),
     { id: "p", type: "wall", parentId: "level_0", start: [4, 0], end: [4, 6], thickness: 0.1 },
   ];
-  const { labels } = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: false });
+  const { labels } = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: false, scale: 100 });
   const text = labels.map((l) => l.text);
 
   // 0 → 4 m and 4 → 10 m along the top; 0 → 6 m down the left.
@@ -112,12 +117,12 @@ test("grid bubbles are lettered across and numbered up", () => {
     ...rectangleWalls(10, 6),
     { id: "p", type: "wall", parentId: "level_0", start: [4, 0], end: [4, 6], thickness: 0.1 },
   ];
-  const { labels } = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: true });
+  const { labels } = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: true, scale: 100 });
   const text = labels.map((l) => l.text);
   assert.ok(text.includes("A") && text.includes("B") && text.includes("C"), "three x stations");
   assert.ok(text.includes("1") && text.includes("2"), "two y stations");
 
-  const without = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: false });
+  const without = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: false, scale: 100 });
   assert.ok(!without.labels.some((l) => l.text === "A"), "bubbles are optional");
 });
 
@@ -137,41 +142,40 @@ test("bubbles sit outside the building, never over it", () => {
   }
 });
 
-test("level bounds grow to reserve room for the annotation", () => {
-  const nodes: SceneNodes = {
-    level_0: { id: "level_0", type: "level", name: "Ground", baseElevation: 0 },
-    ...Object.fromEntries(rectangleWalls(10, 6).map((w) => [w.id, w])),
-  };
+test("annotation offsets are paper dimensions, not plan ones", () => {
+  const walls = rectangleWalls(10, 6);
+  const at100 = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: true, scale: 100 });
+  const at50 = deriveDimensions(walls, BOUNDS, { units: UNITS, gridBubbles: true, scale: 50 });
 
-  const [plain] = derivePlanLevels(nodes, { dimensions: false });
-  const [dimensioned] = derivePlanLevels(nodes, { dimensions: true, gridBubbles: true });
+  const reach = (a: { paths: readonly { points: readonly (readonly [number, number])[] }[] }) =>
+    Math.max(...a.paths.flatMap((p) => p.points.map(([, y]) => y))) - BOUNDS.maxY;
 
-  // `bounds` is the building and must not move when annotation is added.
-  assert.deepEqual(dimensioned!.bounds, plain!.bounds, "the building is unchanged");
-
-  // `sheetBounds` is what the page reserves; without it the chains would be
-  // cropped off the sheet.
-  assert.ok(dimensioned!.sheetBounds.maxY > plain!.sheetBounds.maxY);
-  assert.ok(dimensioned!.sheetBounds.minX < plain!.sheetBounds.minX);
-  const grew = dimensioned!.sheetBounds.maxY - plain!.sheetBounds.maxY;
+  // A chain sits the same distance off the building *on paper* at any scale,
+  // so in plan metres it must halve when the scale doubles in size.
+  const ratio = reach(at100) / reach(at50);
   assert.ok(
-    Math.abs(grew - annotationMargin(true)) < 1e-9,
-    `reserved ${grew} m, expected ${annotationMargin(true)} m`,
+    Math.abs(ratio - 2) < 1e-6,
+    `1:100 should reach twice as far in plan metres as 1:50, got ${ratio}`,
   );
 });
 
 test("annotation margin accounts for bubbles only when they are drawn", () => {
-  assert.ok(annotationMargin(true) > annotationMargin(false));
+  // Returned in paper millimetres: the sheet engine subtracts it from the
+  // viewport before choosing a scale, which is what breaks the circularity.
+  assert.ok(annotationMarginMm(true) > annotationMarginMm(false));
+  assert.ok(annotationMarginMm(false) > 0);
 });
 
-test("dimensions can be turned off entirely", () => {
+test("the model derivation carries the walls for the sheet to dimension", () => {
   const nodes: SceneNodes = {
     level_0: { id: "level_0", type: "level", name: "Ground", baseElevation: 0 },
     ...Object.fromEntries(rectangleWalls(10, 6).map((w) => [w.id, w])),
   };
-  const [off] = derivePlanLevels(nodes, { dimensions: false });
-  assert.equal(off!.drawing.paths.length, 0);
-  assert.equal(off!.drawing.labels.length, 0);
+  const [level] = derivePlanLevels(nodes);
+  // Annotation is a sheet concern now, so none is produced here...
+  assert.equal(level!.drawing.labels.length, 0);
+  // ...but the walls travel with the level so the sheet can build it at scale.
+  assert.equal(level!.walls.length, 4);
 });
 
 test("walls can be hatched instead of poché'd", () => {
@@ -180,8 +184,8 @@ test("walls can be hatched instead of poché'd", () => {
     ...Object.fromEntries(rectangleWalls(10, 6).map((w) => [w.id, w])),
   };
 
-  const [solid] = derivePlanLevels(nodes, { wallFill: "solid", dimensions: false });
-  const [hatched] = derivePlanLevels(nodes, { wallFill: "hatch", dimensions: false });
+  const [solid] = derivePlanLevels(nodes, { wallFill: "solid" });
+  const [hatched] = derivePlanLevels(nodes, { wallFill: "hatch" });
 
   const solidWall = solid!.drawing.polygons.at(-1)!;
   const hatchedWall = hatched!.drawing.polygons.at(-1)!;
@@ -205,7 +209,7 @@ test("dimensions read centreline to centreline, not to the outer face", () => {
   assert.deepEqual(stations.x, [0, 10], "centrelines, not the outer face");
   assert.deepEqual(stations.y, [0, 6]);
 
-  const { labels } = deriveDimensions(walls, outer, { units: UNITS, gridBubbles: false });
+  const { labels } = deriveDimensions(walls, outer, { units: UNITS, gridBubbles: false, scale: 100 });
   const readings = labels.map((l) => l.text).filter((t) => /^\d+$/.test(t));
   assert.ok(readings.includes("10000"), `overall should read 10000, got ${readings.join(",")}`);
   assert.ok(
@@ -233,7 +237,7 @@ test("the reference building's bay chain reproduces exactly", () => {
   }
 
   const outer: PlanBounds = { minX: -0.075, minY: -0.075, maxX: 19.167, maxY: 8.562 };
-  const { labels } = deriveDimensions(walls, outer, { units: UNITS, gridBubbles: true });
+  const { labels } = deriveDimensions(walls, outer, { units: UNITS, gridBubbles: true, scale: 100 });
   const readings = labels.map((l) => l.text);
 
   for (const bay of bays) {
