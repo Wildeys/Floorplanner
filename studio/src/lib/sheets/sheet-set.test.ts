@@ -38,7 +38,11 @@ function roomWalls(w: number, h: number, parentId = "level_0", prefix = "w") {
   }));
 }
 
-function sceneWith(levels: { id: string; name: string; elevation: number }[]): SceneNodes {
+function sceneWith(
+  levels: { id: string; name: string; elevation: number }[],
+  /** Defaults to the reference building's footprint, which suits 1:100. */
+  footprint: { width: number; depth: number } = { width: 19.092, depth: 8.487 },
+): SceneNodes {
   const nodes: Record<string, unknown> = {};
   for (const [index, level] of levels.entries()) {
     nodes[level.id] = {
@@ -47,7 +51,7 @@ function sceneWith(levels: { id: string; name: string; elevation: number }[]): S
       name: level.name,
       baseElevation: level.elevation,
     };
-    for (const wall of roomWalls(19.092, 8.487, level.id, `w${index}`)) {
+    for (const wall of roomWalls(footprint.width, footprint.depth, level.id, `w${index}`)) {
       nodes[wall.id] = wall;
     }
   }
@@ -327,6 +331,28 @@ test("an oversized building still steps coarser, not finer", () => {
   const viewport = { x: 0, y: 0, width: mmToPoints(280), height: mmToPoints(180) };
   const huge = resolveSheetScale(40, 20, viewport, 100, 50);
   assert.ok(huge.scale > 100, `expected coarser than 1:100, got 1:${huge.scale}`);
+});
+
+test("the sheet carries no note to ourselves about its own scale", async () => {
+  // A 5.5 m building steps to 1:50, which is not the profile default. The
+  // sheet must still read as a finished drawing: the caption states the scale
+  // it is drawn at and nothing more. `atDefaultScale` carries the deviation to
+  // the editor instead.
+  const levels = derivePlanLevels(
+    sceneWith([{ id: "level_0", name: "Ground", elevation: 0 }], { width: 5.5, depth: 3.5 }),
+  );
+  const { pdf, sheets } = await renderSheetSet({
+    profile: MALDIVES_PROFILE,
+    project: PROJECT,
+    levels,
+    watermark: null,
+  });
+  const text = extractText(pdf);
+
+  assert.equal(sheets[0]!.atDefaultScale, false, "this fixture should have stepped scale");
+  assert.ok(text.includes("SCALE 1:50"), "the drawn scale is stated");
+  assert.ok(!/not the standard/i.test(text), "no developer aside on a submission sheet");
+  assert.ok(!text.includes("("), "the caption carries no parenthetical at all");
 });
 
 test("floor plan titles never double a word", () => {

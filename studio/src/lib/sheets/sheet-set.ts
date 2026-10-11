@@ -472,12 +472,18 @@ function drawNorthArrow(doc: PdfDoc, x: number, y: number): void {
   doc.restore();
 }
 
+/**
+ * The caption states the scale the sheet is actually drawn at, and nothing
+ * else. Whether that is the profile's default is the studio's business, not
+ * the drawing's — a submission sheet annotated with its own deviation reads as
+ * an unfinished draft. Callers get the fact as `atDefaultScale` on each
+ * returned sheet and surface it in the editor instead.
+ */
 function drawSheetCaption(
   doc: PdfDoc,
   viewport: BoxPt,
   title: string,
   scale: ScaleDenominator,
-  atRequested: boolean,
 ): void {
   const baseline = viewport.y + viewport.height - mm(8);
   doc.save();
@@ -490,12 +496,9 @@ function drawSheetCaption(
     .font("Helvetica")
     .fontSize(mm(2))
     .fillColor(INK)
-    .text(
-      atRequested ? `SCALE 1:${scale}` : `SCALE 1:${scale} (not the standard 1:100)`,
-      viewport.x + mm(4),
-      baseline + mm(4),
-      { width: viewport.width },
-    );
+    .text(`SCALE 1:${scale}`, viewport.x + mm(4), baseline + mm(4), {
+      width: viewport.width,
+    });
   doc.restore();
 }
 
@@ -604,7 +607,7 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
     );
 
     drawPlan(doc, drawing, placement, sheetBounds.minX, sheetBounds.minY);
-    drawSheetCaption(doc, viewport, title, scale, atRequested);
+    drawSheetCaption(doc, viewport, title, scale);
     drawNorthArrow(doc, viewport.x + viewport.width - mm(12), viewport.y + mm(12));
     drawStampReserve(doc, profile, page);
     drawTitleBlock(doc, profile, project, page, { code, title, scale });

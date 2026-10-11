@@ -1,0 +1,18 @@
+diff --git a/node_modules/@pascal-app/editor/src/lib/export-texture-utils.ts b/node_modules/@pascal-app/editor/src/lib/export-texture-utils.ts
+index 2b0d478..022e449 100644
+--- a/node_modules/@pascal-app/editor/src/lib/export-texture-utils.ts
++++ b/node_modules/@pascal-app/editor/src/lib/export-texture-utils.ts
+@@ -56,7 +56,12 @@ export function createExportTextureUtils(
+ ): ExportTextureUtils {
+   let pending: Promise<WebGPURenderer> | null = null
+   let disposed = false
+-  const quad = new QuadMesh()
++  // three's runtime constructor passes the material straight to Mesh, which
++  // substitutes a default when it is undefined, and `quad.material` is
++  // reassigned on every decompress call below. @types/three declares the
++  // parameter as required, so the cast records an argument deliberately
++  // omitted rather than forgotten.
++  const quad = new QuadMesh(undefined as unknown as NodeMaterial)
+ 
+   return {
+     async decompress(texture, maxTextureSize = Number.POSITIVE_INFINITY) {

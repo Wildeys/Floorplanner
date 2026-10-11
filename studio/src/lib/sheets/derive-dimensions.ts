@@ -255,12 +255,23 @@ export function deriveDimensions(
   const topOverall = topLine + geometry.chainSpacing;
   const leftOverall = leftLine - geometry.chainSpacing;
 
+  // An axis with two stations has a single bay, so its overall dimension is
+  // the same measurement as its running chain. The reference sheets never
+  // print one reading twice, so that axis carries the running chain alone and
+  // everything outboard of it — extension lines, bubbles — pulls in by one
+  // chain spacing. The two axes are judged separately: a plan can be one bay
+  // wide and five bays deep.
+  const xIsMultiBay = stations.x.length > 2;
+  const yIsMultiBay = stations.y.length > 2;
+  const topOuter = xIsMultiBay ? topOverall : topLine;
+  const leftOuter = yIsMultiBay ? leftOverall : leftLine;
+
   // Extension lines carry each station out to the chains.
   for (const x of stations.x) {
     paths.push({
       points: [
         [x, bounds.maxY + geometry.extensionGap],
-        [x, topOverall + geometry.extensionOvershoot],
+        [x, topOuter + geometry.extensionOvershoot],
       ],
       stroke: INK.annotation,
       weightMm: PEN.annotation,
@@ -270,32 +281,34 @@ export function deriveDimensions(
     paths.push({
       points: [
         [bounds.minX - geometry.extensionGap, y],
-        [leftOverall - geometry.extensionOvershoot, y],
+        [leftOuter - geometry.extensionOvershoot, y],
       ],
       stroke: INK.annotation,
       weightMm: PEN.annotation,
     });
   }
 
-  const running = [
+  const chains = [
     chain(stations.x, topLine, "top", units, geometry),
     chain(stations.y, leftLine, "left", units, geometry),
   ];
   // The overall chain spans the same end gridlines as the running chain,
   // ignoring the intermediate ones. Measuring it to the outer bounds instead
   // would print an overall that does not equal the sum of its own bays.
-  const overall = [
-    chain(endpoints(stations.x), topOverall, "top", units, geometry),
-    chain(endpoints(stations.y), leftOverall, "left", units, geometry),
-  ];
+  if (xIsMultiBay) {
+    chains.push(chain(endpoints(stations.x), topOverall, "top", units, geometry));
+  }
+  if (yIsMultiBay) {
+    chains.push(chain(endpoints(stations.y), leftOverall, "left", units, geometry));
+  }
 
-  for (const part of [...running, ...overall]) {
+  for (const part of chains) {
     paths.push(...part.paths);
     labels.push(...part.labels);
   }
 
   if (gridBubbles) {
-    const bubbleY = topOverall + geometry.bubbleOffset;
+    const bubbleY = topOuter + geometry.bubbleOffset;
     stations.x.forEach((x, index) => {
       paths.push(circle([x, bubbleY], geometry.bubbleRadius));
       labels.push({
@@ -306,7 +319,7 @@ export function deriveDimensions(
       });
     });
 
-    const bubbleX = leftOverall - geometry.bubbleOffset;
+    const bubbleX = leftOuter - geometry.bubbleOffset;
     // Numbered upward, so 1 is at the bottom of the sheet as drawn.
     stations.y.forEach((y, index) => {
       paths.push(circle([bubbleX, y], geometry.bubbleRadius));
@@ -357,6 +370,11 @@ function circle(centre: PlanPoint, radius: number, segments = 24): PlanPath {
  * Returned in paper units because the sheet engine subtracts it from the
  * viewport *before* choosing a scale. Doing it the other way round is circular:
  * the margin would depend on the scale that depends on the margin.
+ *
+ * Always reserves room for both chains, even on a single-bay axis that will
+ * only draw one. Discounting it would make the chosen scale depend on the bay
+ * count, so adding an internal wall could silently rescale the sheet; the
+ * unused strip is left as slack instead.
  */
 export function annotationMarginMm(gridBubbles: boolean): number {
   const chains =

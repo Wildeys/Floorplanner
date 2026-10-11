@@ -251,6 +251,63 @@ test("the reference building's bay chain reproduces exactly", () => {
   assert.ok(!readings.includes("G"), "and no seventh");
 });
 
+test("a single-bay room reads each side once, not twice", () => {
+  // The room sheet printed 5312 above 5312 and 7090 beside 7090: with no
+  // interior wall the running chain and the overall chain measure the same
+  // span, so the overall is suppressed rather than duplicated.
+  const walls = rectangleWalls(5.312, 7.09);
+  const outer: PlanBounds = { minX: -0.075, minY: -0.075, maxX: 5.387, maxY: 7.165 };
+
+  const { labels } = deriveDimensions(walls, outer, {
+    units: UNITS,
+    gridBubbles: true,
+    scale: 50,
+  });
+  const readings = labels.map((l) => l.text).filter((t) => /^\d+$/.test(t));
+
+  assert.deepEqual(
+    readings.filter((r) => r === "5312"),
+    ["5312"],
+    "the 5312 span is dimensioned once",
+  );
+  assert.deepEqual(
+    readings.filter((r) => r === "7090"),
+    ["7090"],
+    "the 7090 span is dimensioned once",
+  );
+});
+
+test("one axis keeps its overall chain when only the other is single-bay", () => {
+  // Three x stations and two y stations: the top side has real bays to total,
+  // the left side does not. The axes are judged independently.
+  // 10 × 3 with a partition at x = 6, so no bay reading collides with another.
+  const walls: SceneNodeLike[] = [
+    ...rectangleWalls(10, 3),
+    { id: "p", type: "wall", parentId: "level_0", start: [6, 0], end: [6, 3], thickness: 0.1 },
+  ];
+  const outer: PlanBounds = { minX: -0.075, minY: -0.075, maxX: 10.075, maxY: 3.075 };
+
+  const { labels } = deriveDimensions(walls, outer, {
+    units: UNITS,
+    gridBubbles: false,
+    scale: 100,
+  });
+  const readings = labels.map((l) => l.text).filter((t) => /^\d+$/.test(t));
+
+  assert.deepEqual(readings.filter((r) => r === "6000"), ["6000"], "first x bay");
+  assert.deepEqual(readings.filter((r) => r === "4000"), ["4000"], "second x bay");
+  assert.deepEqual(
+    readings.filter((r) => r === "10000"),
+    ["10000"],
+    "the x overall totals its bays and is printed once",
+  );
+  assert.deepEqual(
+    readings.filter((r) => r === "3000"),
+    ["3000"],
+    "the single-bay y side is not doubled",
+  );
+});
+
 test("a plan with too few axis-aligned walls falls back to its bounds", () => {
   const diagonalOnly: SceneNodeLike[] = [
     { id: "d", type: "wall", parentId: "level_0", start: [0, 0], end: [5, 4], thickness: 0.1 },

@@ -17,14 +17,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
-  typescript: {
-    // Because we compile that package's source, Next's build-time check also
-    // type-checks it — and it has a pre-existing upstream error. Our own code
-    // is still gated strictly by `npm run typecheck`, which `npm run build`
-    // runs first; see scripts/typecheck.mjs.
-    ignoreBuildErrors: true,
-  },
 };
 
 export default nextConfig;
