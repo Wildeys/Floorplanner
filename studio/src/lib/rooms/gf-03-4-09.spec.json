@@ -1,0 +1,265 @@
+{
+  "project": "GF-03.4.09 office fit-out",
+  "version": "1.3",
+  "revision_note": "All six desks now face the west wall for privacy (two rows of three in the centre of the room); the north pair steps 200 mm east to clear the door swing. Meeting corner in the SW as v1.0, supervisor unchanged in front of the column, storage on the south wall, no sofa.",
+  "units": "mm",
+  "coordinate_system": {
+    "origin": "Inner face corner at the south-west of the room: where the west wall (meeting screen) meets the south wall (basin).",
+    "x_axis": "East, along the south wall toward the basin.",
+    "y_axis": "North, toward the door wall.",
+    "compass": "North = +Y (door wall). Door is in the NW, column in the NE, existing basin in the SE.",
+    "rect_convention": "rect = {x, y, w, h}: x,y is the lower-left (south-west) corner, w is size along X (east), h is size along Y (north).",
+    "angles": "Degrees, counter-clockwise from +X. Arcs are drawn counter-clockwise from start_angle to end_angle.",
+    "placing_in_existing_dwg": "Draw everything as one block with base point (0,0), then move that point onto the south-west inner corner of GF-03.4.09 and rotate the block to match the walls."
+  },
+
+  "room": {
+    "id": "GF-03.4.09",
+    "use": "Office",
+    "interior": { "x": 0, "y": 0, "w": 5162, "h": 6940 },
+    "area_m2": 35.82,
+    "ceiling_level": "+2.700",
+    "walls": {
+      "north_wall": "y = 6940 (door wall)",
+      "south_wall": "y = 0 (basin wall)",
+      "west_wall": "x = 0 (meeting screen wall)",
+      "east_wall": "x = 5162 (column side)"
+    }
+  },
+
+  "layers": [
+    { "name": "A-WALL",        "color": 7,   "linetype": "Continuous", "lineweight": 0.50 },
+    { "name": "A-DOOR",        "color": 2,   "linetype": "Continuous", "lineweight": 0.25 },
+    { "name": "A-COLS",        "color": 8,   "linetype": "Continuous", "lineweight": 0.35 },
+    { "name": "A-FURN",        "color": 4,   "linetype": "Continuous", "lineweight": 0.25 },
+    { "name": "A-FURN-CHAIR",  "color": 3,   "linetype": "Continuous", "lineweight": 0.18 },
+    { "name": "A-FURN-OVHD",   "color": 8,   "linetype": "HIDDEN",     "lineweight": 0.18 },
+    { "name": "A-EQPM",        "color": 5,   "linetype": "Continuous", "lineweight": 0.18 },
+    { "name": "A-PLMB-EXST",   "color": 1,   "linetype": "Continuous", "lineweight": 0.25 },
+    { "name": "A-AREA-ZONE",   "color": 254, "linetype": "Continuous", "lineweight": 0.00, "hatch": "SOLID", "transparency": 70 },
+    { "name": "A-CIRC",        "color": 140, "linetype": "DASHED",     "lineweight": 0.25 },
+    { "name": "A-ANNO-TEXT",   "color": 7,   "linetype": "Continuous", "lineweight": 0.18 },
+    { "name": "A-ANNO-DIMS",   "color": 6,   "linetype": "Continuous", "lineweight": 0.18 }
+  ],
+
+  "existing_elements": {
+    "note": "Already in the source drawing. Skip them when drawing into that DWG; draw them only in a new, empty drawing.",
+    "walls": {
+      "layer": "A-WALL",
+      "thickness_assumed": 150,
+      "hatch": "ANSI31",
+      "rects": [
+        { "id": "W-WEST",    "x": -150, "y": -150, "w": 150,  "h": 7240 },
+        { "id": "W-EAST",    "x": 5162, "y": -150, "w": 150,  "h": 7240 },
+        { "id": "W-SOUTH",   "x": 0,    "y": -150, "w": 5162, "h": 150 },
+        { "id": "W-NORTH-A", "x": 0,    "y": 6940, "w": 300,  "h": 150 },
+        { "id": "W-NORTH-B", "x": 1300, "y": 6940, "w": 3862, "h": 150 }
+      ]
+    },
+    "door": {
+      "id": "DR-01",
+      "layer": "A-DOOR",
+      "opening": { "wall": "north_wall", "x_from": 300, "x_to": 1300, "y": 6940, "width": 1000 },
+      "hinge": [1300, 6940],
+      "opens": "inward",
+      "leaf_open_position": { "type": "rect", "x": 1260, "y": 5940, "w": 40, "h": 1000 },
+      "swing": { "type": "arc", "center": [1300, 6940], "radius": 1000, "start_angle": 180, "end_angle": 270 }
+    },
+    "column": {
+      "id": "COL-01",
+      "layer": "A-COLS",
+      "type": "rect", "x": 4672, "y": 5565, "w": 490, "h": 1375,
+      "hatch": "ANSI31",
+      "label": "COLUMN"
+    },
+    "basin": {
+      "id": "SNK-01",
+      "layer": "A-PLMB-EXST",
+      "type": "rect", "x": 4225, "y": 100, "w": 450, "h": 400, "corner_radius": 80,
+      "center": [4450, 300],
+      "label": "SINK (EXISTING)",
+      "note": "Align to the basin already in the DWG. If its real centre differs, shift COF-01 by the same amount along X."
+    }
+  },
+
+  "zones": {
+    "layer": "A-AREA-ZONE",
+    "note": "Optional light fills behind the furniture. Draw first so furniture and the column sit on top.",
+    "items": [
+      { "id": "Z-TEAM",       "type": "rect", "x": 1100, "y": 2840, "w": 2800, "h": 3700, "color_rgb": [230, 237, 246], "label": "TEAM" },
+      { "id": "Z-SUPERVISOR", "type": "rect", "x": 3900, "y": 4400, "w": 1262, "h": 1370, "color_rgb": [236, 230, 244], "label": "SUPERVISOR" },
+      { "id": "Z-MEETING",    "type": "rect", "x": 330,  "y": 220,  "w": 1940, "h": 1940, "corner_radius": 130, "color_rgb": [230, 239, 226], "label": "MEETING" },
+      { "id": "Z-PANTRY",     "type": "rect", "x": 3760, "y": 0,    "w": 1402, "h": 2100, "color_rgb": [242, 234, 220], "label": "PANTRY" }
+    ]
+  },
+
+  "furniture": {
+    "team_desks": {
+      "layer": "A-FURN",
+      "size": { "along_x_depth": 600, "along_y_width": 1200 },
+      "facing": "west",
+      "arrangement": "Two rows of three, every desk facing the west wall (privacy: monitors face away from the door and walkway). Users sit on the east side of each desk. The north pair sits 100 mm further north; D1 steps 250 mm east and D4 200 mm east so D1 clears the door swing and D4's chair clears the supervisor desk.",
+      "items": [
+        { "id": "DSK-01", "row": "front", "type": "rect", "x": 1350, "y": 5340, "w": 600, "h": 1200, "label": "D1" },
+        { "id": "DSK-02", "row": "front", "type": "rect", "x": 1100, "y": 4040, "w": 600, "h": 1200, "label": "D2" },
+        { "id": "DSK-03", "row": "front", "type": "rect", "x": 1100, "y": 2840, "w": 600, "h": 1200, "label": "D3" },
+        { "id": "DSK-04", "row": "back",  "type": "rect", "x": 2700, "y": 5340, "w": 600, "h": 1200, "label": "D4" },
+        { "id": "DSK-05", "row": "back",  "type": "rect", "x": 2500, "y": 4040, "w": 600, "h": 1200, "label": "D5" },
+        { "id": "DSK-06", "row": "back",  "type": "rect", "x": 2500, "y": 2840, "w": 600, "h": 1200, "label": "D6" }
+      ]
+    },
+
+    "team_chairs": {
+      "layer": "A-FURN-CHAIR",
+      "size": { "w": 450, "h": 450 },
+      "corner_radius": 60,
+      "backrest": "A strip 80 deep on the east (+X) side, inside the chair outline. All chairs face west.",
+      "items": [
+        { "id": "CH-01", "center": [2250, 5940], "rect": { "x": 2025, "y": 5715, "w": 450, "h": 450 }, "backrest_side": "+X" },
+        { "id": "CH-02", "center": [2000, 4640], "rect": { "x": 1775, "y": 4415, "w": 450, "h": 450 }, "backrest_side": "+X" },
+        { "id": "CH-03", "center": [2000, 3440], "rect": { "x": 1775, "y": 3215, "w": 450, "h": 450 }, "backrest_side": "+X" },
+        { "id": "CH-04", "center": [3600, 5940], "rect": { "x": 3375, "y": 5715, "w": 450, "h": 450 }, "backrest_side": "+X" },
+        { "id": "CH-05", "center": [3400, 4640], "rect": { "x": 3175, "y": 4415, "w": 450, "h": 450 }, "backrest_side": "+X" },
+        { "id": "CH-06", "center": [3400, 3440], "rect": { "x": 3175, "y": 3215, "w": 450, "h": 450 }, "backrest_side": "+X" }
+      ]
+    },
+
+    "supervisor": {
+      "desk":  { "id": "SUP-01", "layer": "A-FURN", "type": "rect", "x": 3900, "y": 4500, "w": 600, "h": 1200, "facing": "west", "label": "SUPERVISOR" },
+      "chair": { "id": "CH-07", "layer": "A-FURN-CHAIR", "center": [4830, 5100], "rect": { "x": 4605, "y": 4875, "w": 450, "h": 450 }, "corner_radius": 60, "backrest_side": "+X" },
+      "note": "Unchanged: in front of the column, back to the east wall, facing west. The only seat that looks at the team's screens."
+    },
+
+    "meeting": {
+      "note": "Restored exactly as v1.0.",
+      "table": { "id": "TBL-01", "layer": "A-FURN", "type": "circle", "center": [1300, 1190], "radius": 400, "label": "Ø800" },
+      "chairs": {
+        "layer": "A-FURN-CHAIR",
+        "size": { "w": 400, "h": 400 },
+        "corner_radius": 50,
+        "backrest": "A strip 70 deep on the side facing away from the table.",
+        "items": [
+          { "id": "MCH-01", "center": [1300, 1840], "rect": { "x": 1100, "y": 1640, "w": 400, "h": 400 }, "backrest_side": "+Y" },
+          { "id": "MCH-02", "center": [1300, 540],  "rect": { "x": 1100, "y": 340,  "w": 400, "h": 400 }, "backrest_side": "-Y" },
+          { "id": "MCH-03", "center": [650, 1190],  "rect": { "x": 450,  "y": 990,  "w": 400, "h": 400 }, "backrest_side": "-X" },
+          { "id": "MCH-04", "center": [1950, 1190], "rect": { "x": 1750, "y": 990,  "w": 400, "h": 400 }, "backrest_side": "+X" }
+        ]
+      },
+      "wall_screen": { "id": "SCN-01", "layer": "A-EQPM", "type": "rect", "x": 0, "y": 790, "w": 60, "h": 800, "fill": "SOLID", "label": "SCREEN / WHITEBOARD" }
+    },
+
+    "storage": {
+      "layer": "A-FURN",
+      "note": "Full-height units, 450 deep, on the south wall between the meeting corner and the pantry.",
+      "items": [
+        { "id": "STO-01", "type": "rect", "x": 2400, "y": 0, "w": 650, "h": 450, "label": "PRINTER", "layer": "A-EQPM" },
+        { "id": "STO-02", "type": "rect", "x": 3050, "y": 0, "w": 650, "h": 450, "label": "CABINET" }
+      ]
+    },
+
+    "coat_hooks": {
+      "id": "COAT-01", "layer": "A-FURN",
+      "type": "rect", "x": 0, "y": 6000, "w": 300, "h": 800,
+      "label": "COAT HOOKS", "note": "Wall-mounted on the west wall, right beside the door."
+    },
+
+    "pantry": {
+      "counter": {
+        "id": "CTR-01", "layer": "A-FURN",
+        "type": "closed_polyline",
+        "points": [[3800, 0], [5162, 0], [5162, 2000], [4562, 2000], [4562, 600], [3800, 600]],
+        "depth": 600,
+        "run_lengths": { "south_leg": 1362, "east_leg_beyond_corner": 1400, "total": 2762 },
+        "label": "L-COUNTER"
+      },
+      "wall_cabinets_above": {
+        "id": "OVH-01", "layer": "A-FURN-OVHD",
+        "type": "closed_polyline",
+        "points": [[3800, 0], [5162, 0], [5162, 2000], [4812, 2000], [4812, 350], [3800, 350]],
+        "depth": 350,
+        "label": "WALL CABINETS OVER"
+      },
+      "items": [
+        { "id": "COF-01", "layer": "A-EQPM", "type": "rect", "x": 3840, "y": 120,  "w": 340, "h": 340, "corner_radius": 40, "label": "COFFEE" },
+        { "id": "KET-01", "layer": "A-EQPM", "type": "rect", "x": 4600, "y": 750,  "w": 500, "h": 400, "corner_radius": 40, "label": "KETTLE" },
+        { "id": "FRG-01", "layer": "A-EQPM", "type": "rect", "x": 4590, "y": 1350, "w": 530, "h": 600, "linetype": "DASHED", "label": "FRIDGE (UNDER)" }
+      ],
+      "sink": "Uses existing basin SNK-01 in the south leg (see existing_elements)."
+    }
+  },
+
+  "circulation": {
+    "id": "RT-01",
+    "layer": "A-CIRC",
+    "type": "polyline",
+    "points": [[700, 6850], [700, 2440], [4300, 2440], [4300, 1650]],
+    "end_arrow": true,
+    "note": "In through the door, south along the west walkway in front of the desks (passers-by see only the backs of monitors), east between the meeting corner and the desks, then into the pantry. The supervisor is reached from the east side, the storage from the open area in front of it."
+  },
+
+  "annotations": {
+    "layer": "A-ANNO-TEXT",
+    "text_height_default": 120,
+    "items": [
+      { "text": "ENTRY",        "position": [800, 7350],  "height": 150, "justify": "MC", "rotation": 0 },
+      { "text": "TEAM",         "position": [3350, 6250], "height": 100, "justify": "BL", "rotation": 0 },
+      { "text": "MEETING",      "position": [380, 2030],  "height": 100, "justify": "BL", "rotation": 0 },
+      { "text": "PANTRY",       "position": [3800, 1950], "height": 80,  "justify": "BL", "rotation": 0 },
+      { "text": "MAIN WALKWAY", "position": [350, 4300],  "height": 100, "justify": "MC", "rotation": 90 },
+      { "text": "GF-03.4.09 OFFICE  35.8 m²  CH +2.700", "position": [2581, -1350], "height": 180, "justify": "MC", "rotation": 0 }
+    ],
+    "north_arrow": { "position": [5700, 7400], "points_to": "+Y", "label": "N" },
+    "item_labels": "Write each item's label at its centre, height 80, justify MC.",
+    "existing_tags": "The existing room tag (GF-03.4.09) and ceiling tag (+2.700 C010) sit roughly in the middle of the room, over the new desks. Move them to about (2900, 1300), the open area in front of the storage, or switch their layer off when plotting."
+  },
+
+  "dimensions": {
+    "layer": "A-ANNO-DIMS",
+    "style": "Linear, text height 150, arrow type architectural tick",
+    "items": [
+      { "id": "DIM-W",     "from": [0, 0],       "to": [5162, 0],    "dim_line_offset": -700, "text": "5162", "note": "Overall width (W–E)" },
+      { "id": "DIM-H",     "from": [0, 0],       "to": [0, 6940],    "dim_line_offset": -700, "text": "6940", "note": "Overall depth (S–N)" },
+      { "id": "DIM-WEST",  "from": [0, 4040],    "to": [1100, 4040], "dim_line_offset": 0,    "text": "1100", "note": "West walkway, wall to front desks" },
+      { "id": "DIM-ROWS",  "from": [1700, 4040], "to": [2500, 4040], "dim_line_offset": 0,    "text": "800",  "note": "Chair space between the rows" },
+      { "id": "DIM-SOUTH", "from": [1300, 2040], "to": [1300, 2840], "dim_line_offset": 0,    "text": "800",  "note": "Meeting chair to front desks (walkway)" },
+      { "id": "DIM-SUP",   "from": [3100, 4950], "to": [3900, 4950], "dim_line_offset": 0,    "text": "800",  "note": "Back row desks to supervisor desk (chair space)" },
+      { "id": "DIM-EAST",  "from": [3100, 4040], "to": [5162, 4040], "dim_line_offset": 0,    "text": "2062", "note": "Back row desks to east wall" }
+    ]
+  },
+
+  "clearances_check": {
+    "west_walkway": 1100,
+    "west_walkway_at_D1": 1350,
+    "chair_space_between_rows": 800,
+    "chair_space_between_rows_north_pair": 750,
+    "meeting_chair_to_front_desks": 800,
+    "back_row_desks_to_supervisor_desk": 800,
+    "back_row_desks_to_east_wall": 2062,
+    "in_front_of_storage": 1590,
+    "behind_supervisor_desk": 662,
+    "desks_north_end_to_north_wall": 400
+  },
+
+  "draw_order": [
+    "layers",
+    "existing_elements (only in a new drawing)",
+    "zones",
+    "furniture.team_desks",
+    "furniture.team_chairs",
+    "furniture.supervisor",
+    "furniture.meeting",
+    "furniture.storage",
+    "furniture.coat_hooks",
+    "furniture.pantry",
+    "circulation",
+    "annotations",
+    "dimensions"
+  ],
+
+  "plot": {
+    "scale": "1:50",
+    "paper": "A3 landscape (plan plus legend) or A4 portrait (plan only)"
+  },
+
+  "accuracy_note": "Room size (5162 x 6940), door, column and basin positions were read from a photo of the CAD screen. Treat them as approximate (about ±50 mm) and snap to the real geometry in the DWG where it differs."
+}

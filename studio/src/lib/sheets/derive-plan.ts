@@ -14,7 +14,9 @@
  * drawing wrong in a way that is hard to spot and impossible to defend.
  *
  * Plan space is the XZ world plane: `wall.start` / `wall.end` are `[x, z]` in
- * metres. Here that becomes `[x, y]` with y increasing "up" the page.
+ * metres. Pascal puts north at world -Z (see the editor's floorplan geometry
+ * module), while a drawing is read with north up the page, so the two frames
+ * have opposite orientation and `toPlanFrame` reflects between them.
  */
 
 import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wall";
@@ -209,6 +211,55 @@ export type DeriveOptions = {
 const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
 
 /**
+ * World XZ -> plan XY.
+ *
+ * North is world -Z, but a plan is read with north up the page, so plan
+ * y = -z. The two frames have opposite orientation, which makes this a
+ * reflection rather than a rotation — and a reflection reverses signed angles.
+ * So everything carrying a handedness has to be reversed with it:
+ *
+ *   - an item's Y rotation, or every rotated desk faces the wrong way
+ *   - a door's swing side, or every door is drawn opening through its wall
+ *
+ * `position[0]` on a door or window is a distance measured along its host
+ * wall, not a world coordinate, so it is deliberately left alone.
+ *
+ * Mirroring the node graph once here keeps the correction in a single place:
+ * wall mitring, opening symbols, item footprints, zone outlines and the
+ * dimension chains downstream all then work in one consistent frame.
+ */
+export function toPlanFrame(nodes: SceneNodes): SceneNodes {
+  const mirrored: Record<string, SceneNodeLike> = {};
+  for (const [id, node] of Object.entries(nodes)) {
+    const next: Record<string, unknown> = { ...node };
+
+    if (node.start) next.start = [node.start[0], -node.start[1]];
+    if (node.end) next.end = [node.end[0], -node.end[1]];
+    if (node.polygon) {
+      next.polygon = node.polygon.map((point) => [point[0], -point[1]] as const);
+    }
+
+    if (node.type === "item") {
+      if (node.position) {
+        next.position = [node.position[0] ?? 0, node.position[1] ?? 0, -(node.position[2] ?? 0)];
+      }
+      if (node.rotation) {
+        next.rotation = [node.rotation[0] ?? 0, -(node.rotation[1] ?? 0), node.rotation[2] ?? 0];
+      }
+    }
+
+    if (node.type === "door" || node.type === "window") {
+      // An unset swing still has a handedness — the derivation treats it as
+      // "outward" — so the default has to flip with everything else.
+      next.swingDirection = node.swingDirection === "inward" ? "outward" : "inward";
+    }
+
+    mirrored[id] = next as SceneNodeLike;
+  }
+  return mirrored;
+}
+
+/**
  * Derive one plan drawing per level, ordered from the lowest storey up.
  *
  * Levels with no wall geometry are dropped rather than emitted as blank sheets
@@ -216,7 +267,7 @@ const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
  * intentionally empty storey.
  */
 export function derivePlanLevels(
-  nodes: SceneNodes,
+  worldNodes: SceneNodes,
   options: DeriveOptions = {},
 ): DerivedLevel[] {
   const {
@@ -225,6 +276,7 @@ export function derivePlanLevels(
     furniture = true,
     wallFill = "solid",
   } = options;
+  const nodes = toPlanFrame(worldNodes);
   const levels = collectLevels(nodes);
   const levelIds = new Set(levels.map((level) => level.id));
 

@@ -101,6 +101,7 @@ test("dimension apparatus is drawn at the annotation weight only", () => {
   const { paths } = deriveDimensions(rectangleWalls(10, 6), BOUNDS, {
     units: UNITS,
     gridBubbles: true,
+    scale: 100,
   });
   assert.ok(paths.length > 0);
   for (const path of paths) {
@@ -130,6 +131,7 @@ test("bubbles sit outside the building, never over it", () => {
   const { paths } = deriveDimensions(rectangleWalls(10, 6), BOUNDS, {
     units: UNITS,
     gridBubbles: true,
+    scale: 100,
   });
   // Circles are the long polylines; every point must clear the plan.
   const circles = paths.filter((p) => p.points.length > 10);

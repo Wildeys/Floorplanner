@@ -14,6 +14,7 @@ import { ToolRail } from "@/components/studio/tool-rail.tsx";
 import { TopBar } from "@/components/studio/top-bar.tsx";
 import { TraceCard } from "@/components/studio/trace-card.tsx";
 import { ViewControls } from "@/components/studio/view-controls.tsx";
+import { useTrackpadNavigation } from "@/components/studio/use-trackpad-navigation.ts";
 import { useDrawingSetPreview } from "@/components/use-drawing-set-preview.ts";
 import type { ProjectMetadata } from "@/lib/sheets/jurisdiction.ts";
 
@@ -99,6 +100,9 @@ export default function StudioShell() {
   const [error, setError] = useState<Error | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  useTrackpadNavigation(canvasRef, ready);
+
   const width = useViewportWidth();
   const canEdit = width === null || width >= EDIT_MIN_WIDTH;
   const furnitureOpen = useEditor((s) => s.mode === "build" && s.tool === "item");
@@ -125,6 +129,20 @@ export default function StudioShell() {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * `?room=gf-03-4-09` drops the issued fit-out straight onto the canvas as
+   * editable nodes, so the model can be checked against the drawing without
+   * anyone redrawing it by hand. It replaces the current scene, so it stays
+   * behind an explicit flag rather than running on a normal visit.
+   */
+  useEffect(() => {
+    if (!ready) return;
+    if (new URLSearchParams(window.location.search).get("room") !== "gf-03-4-09") return;
+    void import("@/lib/rooms/seed-editor.ts").then(({ seedRoomGf03409 }) => {
+      console.info(`[room] loaded GF-03.4.09 — ${seedRoomGf03409()} nodes`);
+    });
+  }, [ready]);
 
   if (error) {
     return (
@@ -168,7 +186,10 @@ export default function StudioShell() {
           </div>
         )}
 
-        <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden rounded-[20px]">
+        <div
+          ref={canvasRef}
+          className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden rounded-[20px]"
+        >
           <Editor
             layoutVersion="v2"
             onSaveStatusChange={setSaveStatus}

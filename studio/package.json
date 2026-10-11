@@ -10,7 +10,8 @@
     "typecheck": "node scripts/typecheck.mjs",
     "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "emit:calibration": "node --experimental-strip-types scripts/emit-calibration-sheet.ts",
-    "emit:sample": "node --experimental-strip-types scripts/emit-sample-set.ts"
+    "emit:sample": "node --experimental-strip-types scripts/emit-sample-set.ts",
+    "emit:room": "node --experimental-strip-types scripts/emit-room-gf03409.ts"
   },
   "dependencies": {
     "@pascal-app/core": "^1.0.3",
