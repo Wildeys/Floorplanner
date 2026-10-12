@@ -51,14 +51,21 @@ export const TEXT_MM = {
 /**
  * Block masonry, as the reference legend labels it.
  *
- * Spacing is a paper dimension so the pattern keeps its density at any scale.
- * Note this is *not* what the reference prints on a 1:100 plan — there the
- * walls read solid, and the ruled pattern appears on the 1:20 details. Use it
- * where it is legible, not everywhere.
+ * This *is* what the reference prints on its 1:100 plans: sheet A.02 cross-
+ * hatches every block wall and carries a matching swatch in its legend,
+ * reserving solid black for the columns. An earlier note here claimed the
+ * opposite; it was wrong, and the sheets drew every wall solid because of it.
+ *
+ * Spacing is a paper dimension so the pattern keeps its printed density at any
+ * scale. 1.1 mm is read off the reference: fine enough to register as masonry
+ * on a 2 mm wall, coarse enough not to fill in to solid grey when printed.
  */
 export const MASONRY_HATCH = {
-  spacingMm: 0.8,
+  spacingMm: 1.1,
   angleDeg: 45,
   weightMm: 0.13,
   stroke: "#1a1a1a",
 } as const;
+
+/** Columns are the one thing the reference fills solid. */
+export const COLUMN_FILL = INK.poche;

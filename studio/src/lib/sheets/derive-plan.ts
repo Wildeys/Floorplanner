@@ -21,7 +21,8 @@
 
 import { calculateLevelMiters, getWallPlanFootprint } from "@pascal-app/core/wall";
 
-import { deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
+import { resolveLibraryId, symbolInFootprint } from "../furniture/plan-symbol.ts";
+import { deriveColumnFootprint, deriveItemFootprint, deriveOpening } from "./derive-openings.ts";
 import { assignOpeningMarks, type OpeningMarks } from "./opening-marks.ts";
 import { INK, MASONRY_HATCH, PEN, TEXT_MM } from "./pens.ts";
 import type {
@@ -162,7 +163,7 @@ export function polygonCentroid(points: readonly PlanPoint[]): PlanPoint {
  */
 export function deriveWallPolygons(
   walls: readonly SceneNodeLike[],
-  fill: WallFill = "solid",
+  fill: WallFill = "hatch",
 ): PlanPolygon[] {
   const usable = walls.filter(
     (wall) => Array.isArray(wall.start) && Array.isArray(wall.end),
@@ -192,9 +193,9 @@ export function deriveWallPolygons(
 /**
  * How cut walls are filled.
  *
- * The reference set prints solid poché on its 1:100 plans and reserves the
- * ruled block-masonry pattern for the 1:20 details, where it is legible. So
- * `solid` is the default for plans, and `hatch` exists for detail scales.
+ * `hatch` is the default because that is what the reference sheets print:
+ * cross-hatched block masonry, with a matching legend swatch. `solid` stays
+ * available for a profile whose convention is poché.
  */
 export type WallFill = "solid" | "hatch";
 
@@ -208,7 +209,7 @@ export type DeriveOptions = {
   readonly wallFill?: WallFill;
 };
 
-const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
+const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item", "column"]);
 
 /**
  * World XZ -> plan XY.
@@ -218,8 +219,15 @@ const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
  * reflection rather than a rotation — and a reflection reverses signed angles.
  * So everything carrying a handedness has to be reversed with it:
  *
- *   - an item's Y rotation, or every rotated desk faces the wrong way
  *   - a door's swing side, or every door is drawn opening through its wall
+ *
+ * An item's Y rotation is the exception, and it reads like a bug until you
+ * work it through. three's `rotateY(t)` sends local +X to `(cos t, -sin t)`
+ * in world (x, z); mirroring z into plan y gives `(cos t, +sin t)`, which is
+ * an anticlockwise turn of the same magnitude. The reflection and three's
+ * rotation sense cancel, so the plan angle *is* `rotation[1]`, unnegated.
+ * Negating it here mirrors every rotated item — invisible while furniture is
+ * a symmetric rectangle, obvious the moment a real symbol is drawn.
  *
  * `position[0]` on a door or window is a distance measured along its host
  * wall, not a world coordinate, so it is deliberately left alone.
@@ -228,6 +236,12 @@ const COLLECTED_TYPES = new Set(["wall", "zone", "door", "window", "item"]);
  * wall mitring, opening symbols, item footprints, zone outlines and the
  * dimension chains downstream all then work in one consistent frame.
  */
+function isPointLoop(
+  polygon: SceneNodeLike["polygon"],
+): polygon is readonly (readonly [number, number])[] {
+  return Array.isArray(polygon);
+}
+
 export function toPlanFrame(nodes: SceneNodes): SceneNodes {
   const mirrored: Record<string, SceneNodeLike> = {};
   for (const [id, node] of Object.entries(nodes)) {
@@ -235,17 +249,26 @@ export function toPlanFrame(nodes: SceneNodes): SceneNodes {
 
     if (node.start) next.start = [node.start[0], -node.start[1]];
     if (node.end) next.end = [node.end[0], -node.end[1]];
-    if (node.polygon) {
-      next.polygon = node.polygon.map((point) => [point[0], -point[1]] as const);
+    // Zones store a point loop. The site stores `{ type, points }`. Mapping
+    // the object throws, and the sheet strip derives on every scene — including
+    // the default site — so a non-loop has to be mirrored by its points.
+    const polygon = node.polygon;
+    if (isPointLoop(polygon)) {
+      next.polygon = polygon.map((point) => [point[0], -point[1]] as const);
+    } else if (polygon?.points) {
+      next.polygon = {
+        ...polygon,
+        points: polygon.points.map((point) => [point[0], -point[1]] as const),
+      };
     }
 
-    if (node.type === "item") {
+    if (node.type === "item" || node.type === "column") {
       if (node.position) {
         next.position = [node.position[0] ?? 0, node.position[1] ?? 0, -(node.position[2] ?? 0)];
       }
-      if (node.rotation) {
-        next.rotation = [node.rotation[0] ?? 0, -(node.rotation[1] ?? 0), node.rotation[2] ?? 0];
-      }
+      // `rotation` is carried across unchanged — see the note above. A
+      // column's is a scalar rather than a triple, which is the other reason
+      // not to rewrite it here.
     }
 
     if (node.type === "door" || node.type === "window") {
@@ -274,7 +297,7 @@ export function derivePlanLevels(
     roomLabels = true,
     openingMarks = true,
     furniture = true,
-    wallFill = "solid",
+    wallFill = "hatch",
   } = options;
   const nodes = toPlanFrame(worldNodes);
   const levels = collectLevels(nodes);
@@ -308,6 +331,12 @@ export function derivePlanLevels(
     if (polygons.length === 0) continue;
 
     const wallsById = new Map(walls.map((wall) => [wall.id, wall]));
+
+    // Which side of a wall is "inside" cannot be read off the wall itself —
+    // its normal points left of start → end, and nothing normalises which end
+    // was drawn first. The centre of the storey's own walls is a good enough
+    // answer for deciding which way an opening's tag should sit.
+    const centre = polygonCentroid(polygons.flatMap((polygon) => polygon.points));
     const knockOuts: PlanPolygon[] = [];
     const paths: PlanPath[] = [];
     const labels: PlanLabel[] = [];
@@ -322,6 +351,7 @@ export function derivePlanLevels(
         const opening = deriveOpening(node, wall, {
           showMarks: openingMarks,
           mark: marks.byNodeId.get(node.id),
+          toward: centre,
         });
         if (!opening) continue;
         openingCount += 1;
@@ -331,35 +361,53 @@ export function derivePlanLevels(
       }
     }
 
+    // Solid black over the hatch: the reference reserves a filled poché for
+    // structure, and drawing it after the walls is what makes it read.
+    const columnPolygons: PlanPolygon[] = [];
+    for (const column of buckets.get("column") ?? []) {
+      const footprint = deriveColumnFootprint(column);
+      if (footprint) columnPolygons.push(footprint);
+    }
+
     const itemPolygons: PlanPolygon[] = [];
+    let itemCount = 0;
     if (furniture) {
       for (const item of buckets.get("item") ?? []) {
         const footprint = deriveItemFootprint(item);
-        if (footprint) itemPolygons.push(footprint);
+        if (!footprint) continue;
+        itemCount += 1;
+        const libraryId = resolveLibraryId(item);
+        const symbol = libraryId ? symbolInFootprint(libraryId, footprint.points) : null;
+        if (symbol) {
+          itemPolygons.push(...symbol.polygons);
+          paths.push(...symbol.paths);
+          labels.push(...symbol.labels);
+        } else {
+          itemPolygons.push(footprint);
+        }
       }
     }
 
     let floorAreaM2 = 0;
     for (const zone of buckets.get("zone") ?? []) {
       const polygon = zone.polygon;
-      if (!polygon || polygon.length < 3) continue;
+      if (!Array.isArray(polygon) || polygon.length < 3) continue;
       const points = polygon.map((p) => [p[0], p[1]] as PlanPoint);
       const area = polygonArea(points);
       floorAreaM2 += area;
       if (!roomLabels) continue;
       const [cx, cy] = polygonCentroid(points);
+      // A boxed name tag and no area figure, as the reference sheets draw it.
+      // The area is still accumulated into `floorAreaM2` for the schedules —
+      // it just does not belong on the plan, where it lands on top of the
+      // furniture and, for a zone covering part of a room, reads as wrong.
       labels.push({
         at: [cx, cy],
         text: (zone.name ?? "ROOM").toUpperCase(),
         sizeMm: TEXT_MM.roomName,
         align: "center",
         bold: true,
-      });
-      labels.push({
-        at: [cx, cy - 0.45],
-        text: `${area.toFixed(2)} m²`,
-        sizeMm: TEXT_MM.roomArea,
-        align: "center",
+        shape: "box",
       });
     }
 
@@ -370,7 +418,7 @@ export function derivePlanLevels(
       // knocked out by nothing — order within `polygons` keeps it under the
       // wall poché where they overlap.
       drawing: {
-        polygons: [...itemPolygons, ...polygons],
+        polygons: [...itemPolygons, ...polygons, ...columnPolygons],
         knockOuts,
         paths,
         labels,
@@ -380,7 +428,7 @@ export function derivePlanLevels(
       floorAreaM2,
       wallCount: walls.length,
       openingCount,
-      itemCount: itemPolygons.length,
+      itemCount,
     });
   }
 

@@ -1,8 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveItemFootprint, deriveOpening, wallGeometry } from "./derive-openings.ts";
-import { derivePlanLevels } from "./derive-plan.ts";
+import {
+  deriveColumnFootprint,
+  deriveItemFootprint,
+  deriveOpening,
+  wallGeometry,
+} from "./derive-openings.ts";
+import { derivePlanLevels, toPlanFrame } from "./derive-plan.ts";
 import { INK, PEN } from "./pens.ts";
 import type { SceneNodeLike, SceneNodes } from "./plan-types.ts";
 
@@ -175,6 +180,51 @@ test("furniture footprints follow position, size and rotation", () => {
   assert.ok(Math.abs(Math.max(...rys) - Math.min(...rys) - 2) < 1e-6, "now 2 m deep");
 });
 
+test("a rotated item turns the way it turns in the editor, not its mirror", () => {
+  // Extents are sign-blind: a desk at +30 degrees and one at -30 have the same
+  // bounding box, so the test above passes either way. Name a corner instead.
+  //
+  // Ground truth, worked from three's own definition rather than from this
+  // module: rotateY(t) sends local (lx, lz) to (lx*cos t + lz*sin t,
+  // -lx*sin t + lz*cos t) in world (x, z), and plan y = -z. For a 2 x 1 item
+  // centred at world (2, 0, 3) that puts the local (+w/2, +d/2) corner at
+  // (3.1160, -2.9330) on the page at +30 degrees.
+  const item = (rotationY: number): SceneNodeLike => ({
+    id: "i",
+    type: "item",
+    position: [2, 0, 3],
+    dimensions: [2, 0.8, 1],
+    rotation: [0, rotationY, 0],
+  });
+
+  /** The production path: mirror into plan frame, then derive. */
+  const planCorners = (rotationY: number) => {
+    const mirrored = toPlanFrame({ i: item(rotationY) });
+    return deriveItemFootprint(mirrored.i!)!.points;
+  };
+
+  const near = (points: readonly (readonly [number, number])[], x: number, y: number) =>
+    points.some(([px, py]) => Math.abs(px - x) < 1e-3 && Math.abs(py - y) < 1e-3);
+
+  const thirty = planCorners(Math.PI / 6);
+  assert.ok(
+    near(thirty, 3.116, -2.933),
+    `+30 degrees should put a corner at (3.116, -2.933); got ${JSON.stringify(thirty)}`,
+  );
+  assert.ok(
+    !near(thirty, 3.116, -3.067),
+    "that is the mirrored corner — the item is turning the wrong way",
+  );
+
+  // A quarter turn is the case a real symbol exposes: the extents are square
+  // to the page either way, but 90 and 270 degrees are not the same drawing.
+  const quarter = planCorners(Math.PI / 2);
+  assert.ok(
+    near(quarter, 2.5, -2.0),
+    `+90 degrees should put a corner at (2.5, -2.0); got ${JSON.stringify(quarter)}`,
+  );
+});
+
 test("furniture without size or position is skipped, not drawn at the origin", () => {
   assert.equal(deriveItemFootprint({ id: "i", type: "item" }), null);
   assert.equal(deriveItemFootprint({ id: "i", type: "item", position: [1, 0, 1] }), null);
@@ -255,4 +305,44 @@ test("furniture can be turned off without affecting walls", () => {
   assert.equal(on!.itemCount, 1);
   assert.equal(off!.itemCount, 0);
   assert.equal(off!.wallCount, on!.wallCount);
+});
+
+test("a column is filled solid, so structure reads against the hatch", () => {
+  const round = deriveColumnFootprint({
+    id: "c1",
+    type: "column",
+    position: [3, 0, 2],
+    radius: 0.25,
+  })!;
+  assert.equal(round.fill, INK.poche, "the one thing the reference fills black");
+  assert.equal(round.weightMm, PEN.cut, "a column is cut by the plan, like a wall");
+  for (const [x, y] of round.points) {
+    assert.ok(
+      Math.abs(Math.hypot(x - 3, y - 2) - 0.25) < 1e-9,
+      `every point sits on the 250 mm radius, got ${Math.hypot(x - 3, y - 2)}`,
+    );
+  }
+
+  // A square column takes width x depth and its own scalar rotation — not the
+  // Euler triple an item carries, which is why it needs its own branch.
+  const square = deriveColumnFootprint({
+    id: "c2",
+    type: "column",
+    position: [0, 0, 0],
+    crossSection: "square",
+    width: 0.4,
+    depth: 0.4,
+    rotation: 0,
+  })!;
+  assert.equal(square.points.length, 4);
+  const xs = square.points.map(([x]) => x);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 0.4) < 1e-9, "400 mm across");
+});
+
+test("a column without a position is skipped, not drawn at the origin", () => {
+  assert.equal(deriveColumnFootprint({ id: "c", type: "column" }), null);
+  assert.equal(
+    deriveColumnFootprint({ id: "c", type: "column", position: [1, 0, 1], radius: 0 }),
+    null,
+  );
 });

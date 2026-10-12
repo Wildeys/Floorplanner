@@ -138,7 +138,17 @@ export type PdfDoc = {
   closePath(): PdfDoc;
   clip(): PdfDoc;
   lineWidth(w: number): PdfDoc;
-  dash(length: number, options?: { space?: number }): PdfDoc;
+  /**
+   * Where the text cursor currently sits. pdfkit advances it past wrapped
+   * text, which is the only way to stack a variable-height notes block
+   * without measuring every line by hand.
+   */
+  y: number;
+  /**
+   * pdfkit accepts either a single on-length or a full on/off array, which is
+   * what a chain-dash (long, gap, dot, gap) needs.
+   */
+  dash(length: number | readonly number[], options?: { space?: number }): PdfDoc;
   undash(): PdfDoc;
   stroke(color?: string): PdfDoc;
   fill(color?: string): PdfDoc;

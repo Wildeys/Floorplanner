@@ -106,7 +106,7 @@ function arc(
 export function deriveOpening(
   node: SceneNodeLike,
   wall: SceneNodeLike,
-  options: { showMarks: boolean; mark?: string },
+  options: { showMarks: boolean; mark?: string; toward?: readonly [number, number] },
 ): DerivedOpening | null {
   const geometry = wallGeometry(wall);
   if (!geometry) return null;
@@ -192,15 +192,44 @@ export function deriveOpening(
   // fallback, and its `name` is deliberately not used — that is an instance
   // label ("Door 1"), which cannot be scheduled.
   const mark = options.mark ?? node.mark;
-  const label: PlanLabel | null =
-    options.showMarks && mark
-      ? {
-          at: alongWall(geometry, (start + end) / 2, -(jambHalf + 0.35)),
-          text: mark.toUpperCase(),
-          sizeMm: TEXT_MM.openingMark,
-          align: "center",
-        }
-      : null;
+  let label: PlanLabel | null = null;
+  if (options.showMarks && mark) {
+    /*
+     * The tag goes *inboard*, in a hexagon, as the reference sheets draw it.
+     *
+     * Two things were wrong with putting it outboard at a fixed -0.35 m. The
+     * offset was a plan metre pretending to be a paper one, so it moved
+     * across the page whenever a storey resolved to a different scale; and
+     * -normal is only "outside" by accident, because which way a wall's
+     * normal points depends on the order its ends happen to be stored in. On
+     * a perimeter wall the two together put the mark in the dimension band.
+     *
+     * Inboard has neither problem: it cannot collide with annotation that by
+     * definition lives outside the building, and the offset is sized from the
+     * opening it belongs to rather than from the paper.
+     */
+    const clear = jambHalf + Math.max(0.3, (end - start) * 0.4);
+    const candidates = [
+      alongWall(geometry, (start + end) / 2, clear),
+      alongWall(geometry, (start + end) / 2, -clear),
+    ] as const;
+    const toward = options.toward;
+    const at = toward
+      ? candidates.reduce((best, point) =>
+          Math.hypot(point[0] - toward[0], point[1] - toward[1]) <
+          Math.hypot(best[0] - toward[0], best[1] - toward[1])
+            ? point
+            : best,
+        )
+      : candidates[1]!;
+    label = {
+      at,
+      text: mark.toUpperCase(),
+      sizeMm: TEXT_MM.openingMark,
+      align: "center",
+      shape: "hexagon",
+    };
+  }
 
   return { knockOut, paths, label };
 }
@@ -246,7 +275,12 @@ export function deriveItemFootprint(item: SceneNodeLike): PlanPolygon | null {
   if (!position || !dimensions) return null;
   if (!(dimensions[0]! > 0) || !(dimensions[2]! > 0)) return null;
 
-  const rotationY = item.rotation?.[1] ?? 0;
+  // Core's own footprint maths, so a placed item occupies exactly the cells the
+  // editor's spatial grid reserved for it. Note `planFootprintCorners` sends
+  // local +X to `(cos, sin)` — the transpose of three's Y rotation, so it is
+  // already expressed in the mirrored plan frame. Feeding it the unnegated
+  // `rotation[1]` is therefore correct; negating first mirrors the item.
+  const rotationY = Array.isArray(item.rotation) ? (item.rotation[1] ?? 0) : 0;
   const corners = planFootprintCorners(
     [position[0]!, position[1] ?? 0, position[2] ?? 0],
     [dimensions[0]!, dimensions[1] ?? 0, dimensions[2]!],
@@ -259,4 +293,46 @@ export function deriveItemFootprint(item: SceneNodeLike): PlanPolygon | null {
     stroke: INK.line,
     weightMm: PEN.seen,
   };
+}
+
+/**
+ * A column in plan.
+ *
+ * The one thing the reference sheets fill solid: a hatched wall with a black
+ * square at each grid intersection is how A.02 reads, and it is how a reader
+ * tells structure from infill at a glance. Drawn after the walls so it sits
+ * over the hatch.
+ */
+export function deriveColumnFootprint(column: SceneNodeLike): PlanPolygon | null {
+  const position = column.position;
+  if (!position) return null;
+  const [x, , z] = [position[0] ?? 0, position[1] ?? 0, position[2] ?? 0];
+
+  const solid = {
+    fill: INK.poche,
+    stroke: INK.line,
+    weightMm: PEN.cut,
+  } as const;
+
+  const round = column.crossSection === undefined || column.crossSection === "round";
+  if (round) {
+    const radius = column.radius ?? 0.22;
+    if (!(radius > 0)) return null;
+    // 24 segments: under a hundredth of a millimetre of chord error at 1:100.
+    const points: PlanPoint[] = [];
+    for (let i = 0; i < 24; i += 1) {
+      const angle = (Math.PI * 2 * i) / 24;
+      points.push([x + Math.cos(angle) * radius, z + Math.sin(angle) * radius]);
+    }
+    return { points, ...solid };
+  }
+
+  const width = column.width ?? 0.44;
+  const depth = column.depth ?? 0.44;
+  if (!(width > 0) || !(depth > 0)) return null;
+  // A column's `rotation` is a scalar, unlike an item's triple.
+  const angle = typeof column.rotation === "number" ? column.rotation : 0;
+  const corners = planFootprintCorners([x, 0, z], [width, 0, depth], angle);
+  if (corners.length < 3) return null;
+  return { points: corners.map(([cx, cz]) => [cx, cz] as PlanPoint), ...solid };
 }

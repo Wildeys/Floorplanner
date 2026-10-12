@@ -128,20 +128,25 @@ test("grid bubbles are lettered across and numbered up", () => {
 });
 
 test("bubbles sit outside the building, never over it", () => {
-  const { paths } = deriveDimensions(rectangleWalls(10, 6), BOUNDS, {
+  const { labels } = deriveDimensions(rectangleWalls(10, 6), BOUNDS, {
     units: UNITS,
     gridBubbles: true,
     scale: 100,
   });
-  // Circles are the long polylines; every point must clear the plan.
-  const circles = paths.filter((p) => p.points.length > 10);
-  assert.ok(circles.length >= 4, "a bubble per station");
-  for (const circle of circles) {
-    const insideBuilding = circle.points.some(
-      ([x, y]) => x > BOUNDS.minX && x < BOUNDS.maxX && y > BOUNDS.minY && y < BOUNDS.maxY,
-    );
-    assert.equal(insideBuilding, false, "a bubble must not overlap the plan");
+  // The ring is drawn around the label by the painter, which is the only
+  // place that can size it from the text, so a bubble is a shaped label now
+  // rather than a hand-built circle in `paths`.
+  const bubbles = labels.filter((l) => l.shape === "circle");
+  assert.ok(bubbles.length >= 4, `a bubble per station, got ${bubbles.length}`);
+  for (const bubble of bubbles) {
+    const [x, y] = bubble.at;
+    const inside = x > BOUNDS.minX && x < BOUNDS.maxX && y > BOUNDS.minY && y < BOUNDS.maxY;
+    assert.equal(inside, false, `bubble "${bubble.text}" must not overlap the plan`);
   }
+  assert.ok(
+    bubbles.some((b) => b.text === "A") && bubbles.some((b) => b.text === "1"),
+    "lettered across the top, numbered up the side",
+  );
 });
 
 test("annotation offsets are paper dimensions, not plan ones", () => {

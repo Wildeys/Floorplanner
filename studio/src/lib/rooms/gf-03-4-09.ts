@@ -75,6 +75,21 @@ export type FurnitureSpec = {
   readonly faceDeg: number;
 };
 
+/**
+ * A spec bearing to the scene's Y rotation, in radians.
+ *
+ * `faceDeg` is a compass bearing — degrees clockwise from north — but an item
+ * at rotation 0 faces its own local +Z, and north is world -Z, so rotation 0
+ * already means "facing south". The two scales therefore run opposite ways
+ * from a 180 degree offset: `rotationDeg = 180 - faceDeg`. Assigning `faceDeg`
+ * straight across happens to be right for east and west and is a half turn out
+ * for north and south, which is every storage unit, the coat hooks and the
+ * pantry run in this room.
+ */
+export function faceDegToRotationY(faceDeg: number): number {
+  return ((180 - faceDeg) * Math.PI) / 180;
+}
+
 type Rect = { x: number; y: number; w: number; h: number };
 
 function centred(

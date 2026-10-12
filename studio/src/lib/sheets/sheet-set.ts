@@ -22,16 +22,21 @@ import {
   type PlanBounds,
   type PlanDrawing,
   type PlanPoint,
+  type SceneNodes,
   boundsExtent,
+  derivePlanLevels,
 } from "./derive-plan.ts";
 import {
   formatDimension,
   type JurisdictionProfile,
   type ProjectMetadata,
   type TitleBlockField,
+  type PlanSheetBlocks,
   sheetCodeAt,
 } from "./jurisdiction.ts";
 import { createPdfDocument, type PdfDoc } from "./pdf-sheet.ts";
+import { MASONRY_HATCH, PEN } from "./pens.ts";
+import type { LabelShape, LineType, PlanPolygon } from "./plan-types.ts";
 import {
   type BoxPt,
   mmToPoints,
@@ -45,6 +50,8 @@ import {
 const INK = "#111111";
 const HAIRLINE = "#888888";
 const WATERMARK = "#d4d4d4";
+/** The sheet colour, for tags that knock out what they sit over. */
+const PAPER = "#ffffff";
 
 export type SheetSetOptions = {
   readonly profile: JurisdictionProfile;
@@ -296,13 +303,14 @@ function projector(
   ];
 }
 
-type DrawablePolygon = {
-  points: readonly (readonly [number, number])[];
-  fill?: string;
-  stroke?: string;
-  weightMm?: number;
-  hatch?: { spacingMm: number; angleDeg: number; weightMm: number; stroke: string };
-};
+/**
+ * What the painter needs from a polygon.
+ *
+ * `PlanPolygon` itself, rather than a local copy: the copy drifted once
+ * already, silently dropping the cross-hatch flag the derivation had started
+ * setting.
+ */
+type DrawablePolygon = PlanPolygon;
 
 function tracePolygon(
   doc: PdfDoc,
@@ -313,6 +321,55 @@ function tracePolygon(
   doc.moveTo(first![0], first![1]);
   for (const [px, py] of rest) doc.lineTo(px, py);
   doc.closePath();
+}
+
+/**
+ * Trim one ruled line to a box, Liang–Barsky style.
+ *
+ * The clip path already hides whatever falls outside the shape, but it hides
+ * it from the *eye* — the coordinates are still written into the content
+ * stream, where the stamp-reserve check reads them and where they bloat the
+ * file. Emitting a segment that stops at the shape's own bounding box keeps
+ * the page honest about where its ink is.
+ *
+ * Returns null when the line misses the box entirely.
+ */
+function clipToBox(
+  px: number,
+  py: number,
+  dx: number,
+  dy: number,
+  reach: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+): [number, number, number, number] | null {
+  let t0 = -reach;
+  let t1 = reach;
+  const limits: [number, number, number][] = [
+    [-dx, px - minX, 0],
+    [dx, maxX - px, 0],
+    [-dy, py - minY, 0],
+    [dy, maxY - py, 0],
+  ];
+  for (const [p, q] of limits) {
+    if (p === 0) {
+      // Parallel to this edge: outside it means the whole line misses.
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+  if (t1 <= t0) return null;
+  return [px + dx * t0, py + dy * t0, px + dx * t1, py + dy * t1];
 }
 
 /**
@@ -341,27 +398,48 @@ function drawHatch(
 
   const spacing = mm(hatch.spacingMm);
   if (spacing <= 0) return;
-  const angle = (hatch.angleDeg * Math.PI) / 180;
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
-  // Sweep the perpendicular offset across the box's full diagonal so the
-  // pattern covers every corner whatever the angle.
   const diagonal = Math.hypot(maxX - minX, maxY - minY);
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
+
+  // The reference legend's "block masonry wall" is a cross-hatch, so a second
+  // sweep runs at the mirrored angle unless the caller asks for one direction.
+  const angles = hatch.crossed === false ? [hatch.angleDeg] : [hatch.angleDeg, -hatch.angleDeg];
 
   doc.save();
   tracePolygon(doc, polygon, project);
   doc.clip();
   doc.lineWidth(mm(hatch.weightMm));
-  for (let offset = -diagonal; offset <= diagonal; offset += spacing) {
-    // A point on the line, displaced along the normal by `offset`.
-    const px = cx - dy * offset;
-    const py = cy + dx * offset;
-    doc
-      .moveTo(px - dx * diagonal, py - dy * diagonal)
-      .lineTo(px + dx * diagonal, py + dy * diagonal)
-      .stroke(hatch.stroke);
+
+  for (const degrees of angles) {
+    const angle = (degrees * Math.PI) / 180;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+
+    // Sweeping the whole diagonal is correct but wasteful: a wall is long and
+    // thin, so most of its bounding box is empty and nearly every ruled line
+    // would be clipped away after being written to the page. Projecting the
+    // polygon onto the hatch normal gives the range that can actually show,
+    // which on a storey of walls is the difference between a few hundred
+    // strokes and a few thousand.
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const [px, py] of projected) {
+      const t = -dy * (px - cx) + dx * (py - cy);
+      if (t < lo) lo = t;
+      if (t > hi) hi = t;
+    }
+    if (!Number.isFinite(lo)) continue;
+
+    const first = Math.ceil(lo / spacing) * spacing;
+    for (let offset = first; offset <= hi; offset += spacing) {
+      // A point on the line, displaced along the normal by `offset`.
+      const px = cx - dy * offset;
+      const py = cy + dx * offset;
+      const span = clipToBox(px, py, dx, dy, diagonal, minX, maxX, minY, maxY);
+      if (!span) continue;
+      doc.moveTo(span[0], span[1]).lineTo(span[2], span[3]).stroke(hatch.stroke);
+    }
   }
   doc.restore();
 }
@@ -425,9 +503,10 @@ function drawPlan(
     doc.moveTo(first![0], first![1]);
     for (const [px, py] of rest) doc.lineTo(px, py);
     doc.lineWidth(mm(path.weightMm));
-    if (path.dashed) doc.dash(mm(3), { space: mm(1.5) });
+    const lineType = path.lineType ?? (path.dashed ? "dashed" : "solid");
+    if (lineType !== "solid") applyLineType(doc, lineType);
     doc.stroke(path.stroke);
-    if (path.dashed) doc.undash();
+    if (lineType !== "solid") doc.undash();
   }
   doc.restore();
 
@@ -445,13 +524,193 @@ function drawPlan(
     if (label.rotateDeg) {
       doc.rotate(label.rotateDeg, { origin: [px, py] });
     }
-    doc.text(label.text, px - boxWidth / 2, py - size / 2, {
+    if (label.shape) {
+      drawLabelShape(doc, label.shape, px, py, doc.widthOfString(label.text), size, mm(label.padMm ?? 1.1));
+      doc.fillColor(INK);
+    }
+    // `baseline: "middle"` centres on the text's own vertical middle. Nudging
+    // by half the font size instead lands on the ascender top and leaves every
+    // ring and tag looking a millimetre low.
+    doc.text(label.text, px - boxWidth / 2, py, {
       width: boxWidth,
       align: label.align ?? "center",
       lineBreak: false,
+      baseline: "middle",
     });
     doc.restore();
   }
+}
+
+/**
+ * The tag around a label, knocked out of whatever it sits over.
+ *
+ * Sized from the measured text, so it is a true paper dimension at any
+ * drawing scale and a long room name gets a wider box rather than a clipped
+ * one. Filled in the sheet colour first: a room tag over a bed, or a door
+ * mark over a swing arc, has to read.
+ */
+function drawLabelShape(
+  doc: PdfDoc,
+  shape: LabelShape,
+  cx: number,
+  cy: number,
+  textWidth: number,
+  textHeight: number,
+  pad: number,
+): void {
+  const halfW = textWidth / 2 + pad;
+  const halfH = textHeight / 2 + pad * 0.7;
+
+  if (shape === "box") {
+    doc
+      .rect(cx - halfW, cy - halfH, halfW * 2, halfH * 2)
+      .lineWidth(mm(PEN.annotation))
+      .fillAndStroke(PAPER, INK);
+    return;
+  }
+
+  // A circle or hexagon has to clear the text's diagonal, not its width.
+  const radius = Math.max(Math.hypot(halfW, halfH), textHeight * 0.9);
+  const sides = shape === "circle" ? 32 : 6;
+  // Flat-top hexagon, as the reference draws its door marks.
+  const phase = shape === "hexagon" ? 0 : 0;
+  for (let i = 0; i < sides; i += 1) {
+    const a = phase + (Math.PI * 2 * i) / sides;
+    const x = cx + radius * Math.cos(a);
+    const y = cy + radius * Math.sin(a);
+    if (i === 0) doc.moveTo(x, y);
+    else doc.lineTo(x, y);
+  }
+  doc.closePath().lineWidth(mm(PEN.annotation)).fillAndStroke(PAPER, INK);
+}
+
+/**
+ * Set pdfkit's dash pattern for a line type.
+ *
+ * pdfkit's `dash` takes one length and one gap, so a true chain-dash — long,
+ * gap, dot, gap — is expressed as a four-entry array, which it accepts as the
+ * first argument. Lengths are paper millimetres, so a gridline reads the same
+ * on a 1:50 plan as on a 1:200 one.
+ */
+function applyLineType(doc: PdfDoc, lineType: Exclude<LineType, "solid">): void {
+  if (lineType === "dash-dot") {
+    doc.dash([mm(6), mm(1.5), mm(0.6), mm(1.5)]);
+    return;
+  }
+  doc.dash(mm(3), { space: mm(1.5) });
+}
+
+/**
+ * The legend and finishing-notes blocks, in the band below the drawing.
+ *
+ * They sit between the sheet caption on the left and the title block on the
+ * right, which is where the reference set puts them. Content comes entirely
+ * from the jurisdiction profile, so a second profile changes the wording
+ * without touching this function (FR-60, FR-63).
+ *
+ * Returns nothing: if the profile declares no blocks, nothing is drawn.
+ */
+function drawPlanBlocks(
+  doc: PdfDoc,
+  blocks: PlanSheetBlocks,
+  project: ProjectMetadata,
+  viewport: BoxPt,
+): void {
+  const top = viewport.y + viewport.height + mm(4);
+  const notesX = viewport.x + viewport.width * 0.42;
+  const legendX = viewport.x + viewport.width * 0.72;
+
+  doc.save();
+
+  // ---- Finishing notes --------------------------------------------------
+  doc.font("Helvetica").fontSize(mm(1.7)).fillColor(INK);
+  doc.text(blocks.notesTitle, notesX, top, { width: mm(60), lineBreak: false });
+  doc
+    .moveTo(notesX, top + mm(2.4))
+    .lineTo(notesX + mm(58), top + mm(2.4))
+    .lineWidth(mm(0.2))
+    .stroke(INK);
+
+  let y = top + mm(4.4);
+  for (const note of blocks.notes) {
+    const text = note
+      .replace("{floorFinish}", project.floorFinish ?? "600MMX600MM")
+      .replace("{wallTile}", project.wallTile ?? "300MMX300MM");
+    doc.fontSize(mm(1.5)).text(`-  ${text}`, notesX, y, {
+      width: mm(56),
+      lineGap: mm(0.25),
+    });
+    y = doc.y + mm(0.8);
+  }
+
+  // ---- Legend -----------------------------------------------------------
+  doc.font("Helvetica").fontSize(mm(1.7)).fillColor(INK);
+  doc.text(blocks.legendTitle, legendX, top, { width: mm(40), lineBreak: false });
+
+  const rowH = mm(3.4);
+  const markW = mm(10);
+  const tableW = mm(46);
+  let rowY = top + mm(3);
+
+  for (const entry of blocks.legend) {
+    doc
+      .moveTo(legendX, rowY)
+      .lineTo(legendX + tableW, rowY)
+      .lineWidth(mm(0.15))
+      .stroke(HAIRLINE);
+
+    if (entry.swatch) {
+      const box = { x: legendX + mm(1), y: rowY + mm(0.6), w: markW - mm(2), h: rowH - mm(1.4) };
+      if (entry.swatch === "solid") {
+        doc.rect(box.x, box.y, box.w, box.h).fill(INK);
+      } else {
+        drawHatch(
+          doc,
+          {
+            points: [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+            ],
+            hatch: MASONRY_HATCH,
+          },
+          ([u, v]) => [box.x + u * box.w, box.y + v * box.h],
+        );
+        doc.rect(box.x, box.y, box.w, box.h).lineWidth(mm(0.15)).stroke(INK);
+      }
+    } else if (entry.mark) {
+      doc
+        .font("Helvetica")
+        .fontSize(mm(1.5))
+        .fillColor(INK)
+        .text(entry.mark, legendX, rowY + mm(0.9), { width: markW, align: "center", lineBreak: false });
+    }
+
+    doc
+      .font("Helvetica")
+      .fontSize(mm(1.5))
+      .fillColor(INK)
+      .text(entry.label, legendX + markW + mm(1.5), rowY + mm(0.9), {
+        width: tableW - markW - mm(2),
+        lineBreak: false,
+      });
+
+    rowY += rowH;
+  }
+  doc
+    .moveTo(legendX, rowY)
+    .lineTo(legendX + tableW, rowY)
+    .lineWidth(mm(0.15))
+    .stroke(HAIRLINE);
+  // The vertical rule separating mark from description.
+  doc
+    .moveTo(legendX + markW, top + mm(3))
+    .lineTo(legendX + markW, rowY)
+    .lineWidth(mm(0.15))
+    .stroke(HAIRLINE);
+
+  doc.restore();
 }
 
 function drawNorthArrow(doc: PdfDoc, x: number, y: number): void {
@@ -608,6 +867,7 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
 
     drawPlan(doc, drawing, placement, sheetBounds.minX, sheetBounds.minY);
     drawSheetCaption(doc, viewport, title, scale);
+    if (profile.planBlocks) drawPlanBlocks(doc, profile.planBlocks, project, viewport);
     drawNorthArrow(doc, viewport.x + viewport.width - mm(12), viewport.y + mm(12));
     drawStampReserve(doc, profile, page);
     drawTitleBlock(doc, profile, project, page, { code, title, scale });
@@ -625,6 +885,36 @@ export async function renderSheetSet(options: SheetSetOptions): Promise<SheetSet
 
   doc.end();
   return { pdf: await done, sheets: emitted };
+}
+
+/** Sentence case for the sheet strip. The PDF title stays in capitals. */
+export function customerPlanTitle(levelName: string): string {
+  const title = floorPlanTitle(levelName).toLowerCase();
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+/**
+ * Sheets the current model can actually produce.
+ *
+ * Only storeys with wall geometry are emitted — the same filter as
+ * `renderSheetSet` — so the strip does not list elevations, schedules, or
+ * empty floors.
+ */
+export function listProduciblePlanSheets(
+  nodes: SceneNodes,
+  profile: JurisdictionProfile,
+): { code: string; title: string }[] {
+  const planSheet = profile.sheets.find((sheet) => sheet.repeat === "per-level");
+  const definition = planSheet ?? {
+    code: "A.01",
+    title: "FLOOR PLAN",
+    scale: profile.defaultPlanScale,
+    repeat: "per-level" as const,
+  };
+  return derivePlanLevels(nodes).map((level, index) => ({
+    code: sheetCodeAt(definition, index),
+    title: customerPlanTitle(level.name),
+  }));
 }
 
 /**

@@ -28,17 +28,38 @@ export type PlanPolygon = {
     readonly angleDeg: number;
     readonly weightMm: number;
     readonly stroke: string;
+    /** Cross-hatch by default; set false for a single set of rules. */
+    readonly crossed?: boolean;
   };
 };
+
+/**
+ * How a line is broken up. Patterns are paper millimetres, so a centreline
+ * keeps its printed rhythm at any drawing scale.
+ */
+export type LineType = "solid" | "dashed" | "dash-dot";
 
 /** An open path: jambs, swing arcs, sill lines, dimension strings. */
 export type PlanPath = {
   readonly points: readonly PlanPoint[];
   readonly stroke: string;
   readonly weightMm: number;
-  /** Chain-dash, for grid lines and centrelines. */
+  /** Shorthand for `lineType: "dashed"`. */
   readonly dashed?: boolean;
+  /** Grid lines and centrelines are chain-dash, as the reference draws them. */
+  readonly lineType?: LineType;
 };
+
+/**
+ * A tag drawn around a label: the reference sheets ring their grid letters,
+ * box their room names and hexagon their door marks.
+ *
+ * It is drawn at paint time rather than derived as geometry because its size
+ * is a paper dimension that depends on the measured width of the text, and
+ * only the renderer has font metrics. Labels paint last, so a tag correctly
+ * masks whatever it sits over.
+ */
+export type LabelShape = "box" | "hexagon" | "circle";
 
 export type PlanLabel = {
   readonly at: PlanPoint;
@@ -47,6 +68,9 @@ export type PlanLabel = {
   readonly sizeMm?: number;
   readonly align?: "left" | "center";
   readonly bold?: boolean;
+  readonly shape?: LabelShape;
+  /** Clearance between the text and its tag, in paper millimetres. */
+  readonly padMm?: number;
   /**
    * Rotation in degrees, anticlockwise on the page. Vertical dimension text is
    * turned so it reads along its own chain — which is both the drawing
@@ -91,8 +115,14 @@ export type SceneNodeLike = {
   readonly end?: readonly [number, number];
   readonly thickness?: number;
 
-  // Zone
-  readonly polygon?: readonly (readonly [number, number])[];
+  // Zone, slab and ceiling boundaries are a point loop. A site boundary is
+  // `{ type, points }` instead, and the default scene always has one.
+  readonly polygon?:
+    | readonly (readonly [number, number])[]
+    | {
+        readonly type?: string;
+        readonly points?: readonly (readonly [number, number])[];
+      };
 
   // Level
   readonly baseElevation?: number;
@@ -107,7 +137,12 @@ export type SceneNodeLike = {
 
   // Item (furniture) — world position, size and Y rotation.
   readonly position?: readonly number[];
-  readonly rotation?: readonly number[];
+  /**
+   * An item's rotation is a Euler triple and only `[1]` turns it in plan. A
+   * column's is a bare number — the same field name, a different shape — so
+   * every reader has to narrow before indexing.
+   */
+  readonly rotation?: readonly number[] | number;
   /**
    * Catalogue-placed items carry no top-level `dimensions`; their size is the
    * asset's dimensions multiplied by `scale`. The plain field is kept for
@@ -115,7 +150,16 @@ export type SceneNodeLike = {
    */
   readonly dimensions?: readonly number[];
   readonly scale?: readonly number[];
-  readonly asset?: { readonly dimensions?: readonly number[] };
+  readonly asset?: {
+    readonly id?: string;
+    readonly name?: string;
+    readonly dimensions?: readonly number[];
+  };
+
+  // Column. Round columns use `radius`; the rest use `width` x `depth`.
+  readonly crossSection?: string;
+  readonly radius?: number;
+  readonly depth?: number;
 };
 
 export type SceneNodes = Readonly<Record<string, SceneNodeLike>>;

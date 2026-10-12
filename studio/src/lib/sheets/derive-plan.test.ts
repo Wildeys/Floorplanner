@@ -58,7 +58,17 @@ test("wall polygons come back mitred from core", () => {
   assert.equal(polygons.length, 4, "one polygon per wall");
   for (const polygon of polygons) {
     assert.ok(polygon.points.length >= 4, "a wall footprint is at least a quad");
-    assert.equal(polygon.fill, "#1a1a1a", "cut walls are poché filled");
+    // Block masonry, as sheet A.02 draws it and as its legend labels it —
+    // cross-hatched, not filled. Solid black is reserved for columns.
+    assert.equal(polygon.fill, undefined, "a cut wall is hatched, not filled");
+    assert.equal(polygon.hatch?.angleDeg, 45, "cut walls carry the masonry hatch");
+    assert.notEqual(polygon.hatch?.crossed, false, "and it is a cross-hatch");
+  }
+
+  // A profile whose convention is poché can still ask for it.
+  for (const polygon of deriveWallPolygons(walls, "solid")) {
+    assert.equal(polygon.fill, "#1a1a1a");
+    assert.equal(polygon.hatch, undefined);
   }
 
   // A mitred 5 m wall on a 0.15 m thick rectangle reaches the outer corners,
@@ -132,8 +142,16 @@ test("levels derive in elevation order with room labels and areas", () => {
   assert.ok(Math.abs(levels[0]!.floorAreaM2 - 24) < 1e-9);
 
   const labels = levels[0]!.drawing.labels;
-  assert.ok(labels.some((l) => l.text === "LIVING"));
-  assert.ok(labels.some((l) => l.text === "24.00 m²"));
+  const tag = labels.find((l) => l.text === "LIVING");
+  assert.ok(tag, "the room carries a name tag");
+  assert.equal(tag!.shape, "box", "boxed, as the reference sheets draw it");
+  // The area still reaches the schedules through floorAreaM2 above, but it is
+  // not printed on the plan: it lands on the furniture, and for a zone that
+  // covers only part of a room it reads as a wrong room area.
+  assert.ok(
+    !labels.some((l) => l.text.includes("m²")),
+    `no area figure on the plan, got ${labels.map((l) => l.text).join(", ")}`,
+  );
 
   // The upper storey has no zone, so no area and no room tag.
   assert.equal(levels[1]!.floorAreaM2, 0);

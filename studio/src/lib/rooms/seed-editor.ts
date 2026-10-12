@@ -13,7 +13,13 @@
 import { AnyNode, useScene } from "@pascal-app/core";
 import { CATALOG_ITEMS, selectDefaultBuildingAndLevel } from "@pascal-app/editor";
 
-import { CEILING, FURNITURE, OPENINGS, WALLS, type FurnitureSpec } from "./gf-03-4-09.ts";
+import {
+  FURNITURE,
+  OPENINGS,
+  WALLS,
+  faceDegToRotationY,
+  type FurnitureSpec,
+} from "./gf-03-4-09.ts";
 
 const SITE_ID = "site_gf03409";
 const BUILDING_ID = "building_gf03409";
@@ -67,7 +73,10 @@ function buildNodes(): Record<string, unknown> {
       object: "node",
       id: LEVEL_ID,
       type: "level",
-      name: `Ground — ${CEILING}`,
+      // Floor datum, not the ceiling. The level list prints ±0.000 for the
+      // ground storey and shows `height` beside it, so the ceiling must not
+      // also be written into the name.
+      name: "Ground",
       parentId: BUILDING_ID,
       // `level: 0` is what marks this as the ground storey; the editor looks
       // for it when choosing which level to open.
@@ -118,7 +127,7 @@ function buildNodes(): Record<string, unknown> {
       parentId: LEVEL_ID,
       name: piece.name,
       position: [piece.x, 0, piece.z],
-      rotation: [0, (piece.faceDeg * Math.PI) / 180, 0],
+      rotation: [0, faceDegToRotationY(piece.faceDeg), 0],
       scale: footprintScale(piece, asset),
       asset,
     });

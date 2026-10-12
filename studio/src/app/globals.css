@@ -217,16 +217,30 @@ body {
   color: #5b6775;
 }
 
-/* Shortcut hint HUD — same light tokens so it does not read as a black card
-   over the canvas. */
+/* Shortcut hint HUD. The editor paints this card white via our earlier
+   override while the active row stays `text-white`, so the hint was white on
+   white. Match the Pan/Rotate/Zoom bar: a dark, near-opaque surface. */
 .studio-shell [data-viewer-bounds] .fixed.right-4.z-40 {
-  --background: #ffffff;
-  --foreground: #1a2330;
-  --muted-foreground: #5b6775;
+  --background: #17171c;
+  --foreground: #f4f4f5;
+  --muted: #27272a;
+  --muted-foreground: #c4c4cc;
+  --border: rgba(255, 255, 255, 0.16);
+  --color-muted-foreground: #c4c4cc;
   position: absolute;
-  background: rgba(255, 255, 255, 0.94);
-  color: #1a2330;
-  border-color: rgba(26, 35, 48, 0.12);
+  background: rgba(23, 23, 28, 0.94);
+  color: #f4f4f5;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.studio-shell [data-viewer-bounds] .fixed.right-4.z-40 .text-muted-foreground {
+  color: #c4c4cc;
+}
+
+/* Level list sits under the view toolbar. Its add buttons stick out of the
+   pill, so the default top offset puts both of them on the toolbar. */
+.studio-shell .pointer-events-auto.absolute.top-14.left-3.z-20 {
+  top: 5.5rem;
 }
 
 /* The editor's own bottom tool bar sits on our sheet strip. The customer

@@ -73,6 +73,33 @@ export type UnitDisplay = {
   readonly secondary: "ft-in" | null;
 };
 
+/**
+ * A row in the sheet's legend block.
+ *
+ * `swatch` says how the sample square is drawn: a mark is the tag itself
+ * (PD, ED), `hatch` reproduces the masonry pattern, `solid` a filled square.
+ */
+export type LegendEntry = {
+  readonly mark?: string;
+  readonly swatch?: "hatch" | "solid";
+  readonly label: string;
+};
+
+/**
+ * The blocks that sit beside the drawing on every plan sheet.
+ *
+ * These barely change between projects, so they are profile content rather
+ * than code: a second jurisdiction supplies its own wording and the
+ * composition engine is untouched (FR-60, FR-63). Finish lines may carry
+ * `{floorFinish}` and `{wallTile}`, substituted from the project.
+ */
+export type PlanSheetBlocks = {
+  readonly legendTitle: string;
+  readonly legend: readonly LegendEntry[];
+  readonly notesTitle: string;
+  readonly notes: readonly string[];
+};
+
 export type JurisdictionProfile = {
   readonly id: string;
   readonly name: string;
@@ -94,6 +121,8 @@ export type JurisdictionProfile = {
    */
   readonly finestPlanScale: ScaleDenominator;
   readonly sheets: readonly SheetDefinition[];
+  /** Legend and finishing-notes blocks printed on each plan sheet. */
+  readonly planBlocks?: PlanSheetBlocks;
 };
 
 /** Inches to millimetres — the stamp reserve is specified in inches. */
@@ -136,6 +165,30 @@ export const MALDIVES_PROFILE: JurisdictionProfile = {
     { code: "A.00", title: "SITE PLAN", scale: 200, repeat: "single" },
     { code: "A.01", title: "FLOOR PLAN", scale: 100, repeat: "per-level" },
   ],
+  // Transcribed from the reference sheet A.02. The duct marks follow FR-502's
+  // PD / ED / ND; the reference's own swatch is lettered FD for the plumbing
+  // duct, which looks like a typo on its part and is worth an architect's
+  // ruling before the first real submission.
+  planBlocks: {
+    legendTitle: "LEGEND",
+    legend: [
+      { mark: "PD", label: "PLUMBING DUCT" },
+      { mark: "ED", label: "ELECTRICAL DUCT" },
+      { mark: "ND", label: "NETWORKING DUCT" },
+      { label: "FLOOR DRAIN" },
+      { swatch: "hatch", label: "BLOCK MASONRY WALL" },
+    ],
+    notesTitle: "FINISHING DETAILS:",
+    notes: [
+      "FFL OF BALCONIES SHOULD BE 25MM LOWER THAN THE FFL OF RESPECTIVE FLOORS.",
+      "WATER PROOFING TO BE APPLIED IN TOILETS, BALCONIES & ROOF TERRACE PRIOR TO TILING.",
+      "EXTERNAL WALLS - WHITE STIPPLE EXTERIOR PAINT FINISH.",
+      "TOILET WALLS - {wallTile} CERAMIC WALL TILES UP TO CEILING HEIGHT WITH TILE ADHESIVE. USE JOINT FILLER OF APPROPRIATE COLOUR FOR GROUTING JOINTS BETWEEN TILES.",
+      "FLOORS - {floorFinish} HOMOGENOUS FLOOR TILES WITH TILE ADHESIVE.",
+      "TOILET FLOORS - 300MMX300MM NON SKID CERAMIC FLOOR TILES WITH TILE ADHESIVE.",
+      "ALL TOILETS MECHANICALLY VENTILATED.",
+    ],
+  },
 };
 
 export const PROFILES: Record<string, JurisdictionProfile> = {
@@ -171,6 +224,13 @@ export type ProjectMetadata = {
   readonly architecturalChecker?: string;
   readonly engineer?: string;
   readonly structuralChecker?: string;
+  /**
+   * Finish selections (FR-36). They feed the `{floorFinish}` / `{wallTile}`
+   * placeholders in the profile's finishing notes, and nothing else on a plan
+   * — the detail sheets swap their own callouts separately.
+   */
+  readonly floorFinish?: string;
+  readonly wallTile?: string;
 };
 
 /**

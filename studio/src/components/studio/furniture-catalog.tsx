@@ -4,7 +4,56 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { CATALOG_ITEMS, activateCatalogItem, useEditor } from "@pascal-app/editor";
 
+import { resolveLibraryId } from "@/lib/furniture/plan-symbol.ts";
+import { thumbnailGeometry } from "@/lib/sheets/furniture-library.ts";
 import { GlassPanel } from "./glass-panel.tsx";
+
+/**
+ * The tile picture: the item's own plan symbol, drawn from code.
+ *
+ * This is the same `plan()` output the 2D view and the PDF draw, so what a
+ * customer picks is literally what lands on the drawing — and the whole
+ * catalogue costs a few kilobytes of path data instead of 111 remote PNGs.
+ * Items with no library symbol yet keep their catalogue photo.
+ */
+function SymbolTile({ libraryId }: { libraryId: string }) {
+  const { viewBox, unit, paths, texts } = thumbnailGeometry(libraryId);
+  return (
+    <svg
+      viewBox={viewBox}
+      className="h-full w-full p-1.5"
+      fill="none"
+      stroke="currentColor"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ color: "var(--ink)" }}
+    >
+      {paths.map((path, index) => (
+        <path
+          key={index}
+          d={path.d}
+          strokeWidth={(path.pen === "outline" ? 2 : 1) * unit}
+          strokeDasharray={path.dashed ? `${6 * unit} ${4 * unit}` : undefined}
+        />
+      ))}
+      {texts.map((text, index) => (
+        <text
+          key={index}
+          x={text.x}
+          y={text.y}
+          fontSize={text.sizeMm * 50}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          stroke="none"
+          fill="currentColor"
+          fontFamily="var(--font-geist-sans), Helvetica, Arial, sans-serif"
+        >
+          {text.text}
+        </text>
+      ))}
+    </svg>
+  );
+}
 
 /** Pascal catalogue groups we surface. Typed locally — the package does not re-export the union. */
 type CatalogGroup = "furniture" | "kitchen" | "bathroom" | "appliance" | "outdoor";
@@ -92,6 +141,7 @@ export function FurnitureCatalog() {
         <ul className="grid min-h-0 flex-1 grid-cols-2 content-start gap-2 overflow-y-auto">
           {items.map((item) => {
             const selected = selectedItem?.id === item.id;
+            const libraryId = resolveLibraryId({ asset: { id: item.id, name: item.name } });
             return (
               <li key={item.id}>
                 <button
@@ -105,14 +155,13 @@ export function FurnitureCatalog() {
                   }}
                 >
                   <span className="relative aspect-square w-full overflow-hidden rounded-[12px] bg-white/70">
-                    {item.thumbnail ? (
-                      // Catalogue thumbnails are remote assets on the item CDN.
+                    {libraryId ? (
+                      <SymbolTile libraryId={libraryId} />
+                    ) : item.thumbnail ? (
+                      // No library symbol for this one yet, so it still shows
+                      // the catalogue photo from the vendor's bucket.
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.thumbnail}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
+                      <img src={item.thumbnail} alt="" className="h-full w-full object-cover" />
                     ) : null}
                   </span>
                   <span className="truncate px-0.5 text-[11px] font-medium">{item.name}</span>

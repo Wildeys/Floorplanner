@@ -308,27 +308,59 @@ export function deriveDimensions(
   }
 
   if (gridBubbles) {
-    const bubbleY = topOuter + geometry.bubbleOffset;
+    // The ring is drawn by the label painter, which is the only place with
+    // font metrics: a hand-rolled circle plus a hand-tuned vertical nudge put
+    // the letter low, and the nudge was a plan metre, so how low depended on
+    // the scale the sheet happened to resolve to.
+    const topBubble = topOuter + geometry.bubbleOffset;
+    const bottomBubble = bounds.minY - geometry.firstChainOffset - geometry.bubbleOffset;
+    const leftBubble = leftOuter - geometry.bubbleOffset;
+    const rightBubble = bounds.maxX + geometry.firstChainOffset + geometry.bubbleOffset;
+
     stations.x.forEach((x, index) => {
-      paths.push(circle([x, bubbleY], geometry.bubbleRadius));
-      labels.push({
-        at: [x, bubbleY - 0.12],
-        text: gridLetter(index),
-        sizeMm: TEXT_MM.gridBubble,
-        align: "center",
+      // The gridline itself, chain-dashed and carried right through the plan
+      // from one bubble to the other — the reference sheets run them across,
+      // not just tick them at the edge.
+      paths.push({
+        points: [
+          [x, bottomBubble + geometry.bubbleRadius],
+          [x, topBubble - geometry.bubbleRadius],
+        ],
+        stroke: INK.annotation,
+        weightMm: PEN.annotation,
+        lineType: "dash-dot",
       });
+      for (const y of [topBubble, bottomBubble]) {
+        labels.push({
+          at: [x, y],
+          text: gridLetter(index),
+          sizeMm: TEXT_MM.gridBubble,
+          align: "center",
+          shape: "circle",
+        });
+      }
     });
 
-    const bubbleX = leftOuter - geometry.bubbleOffset;
     // Numbered upward, so 1 is at the bottom of the sheet as drawn.
     stations.y.forEach((y, index) => {
-      paths.push(circle([bubbleX, y], geometry.bubbleRadius));
-      labels.push({
-        at: [bubbleX, y - 0.12],
-        text: String(index + 1),
-        sizeMm: TEXT_MM.gridBubble,
-        align: "center",
+      paths.push({
+        points: [
+          [leftBubble + geometry.bubbleRadius, y],
+          [rightBubble - geometry.bubbleRadius, y],
+        ],
+        stroke: INK.annotation,
+        weightMm: PEN.annotation,
+        lineType: "dash-dot",
       });
+      for (const x of [leftBubble, rightBubble]) {
+        labels.push({
+          at: [x, y],
+          text: String(index + 1),
+          sizeMm: TEXT_MM.gridBubble,
+          align: "center",
+          shape: "circle",
+        });
+      }
     });
   }
 
@@ -350,18 +382,6 @@ export function gridLetter(index: number): string {
     n = Math.floor(n / 26) - 1;
   } while (n >= 0);
   return out;
-}
-
-function circle(centre: PlanPoint, radius: number, segments = 24): PlanPath {
-  const points: PlanPoint[] = [];
-  for (let i = 0; i <= segments; i += 1) {
-    const angle = (Math.PI * 2 * i) / segments;
-    points.push([
-      centre[0] + Math.cos(angle) * radius,
-      centre[1] + Math.sin(angle) * radius,
-    ]);
-  }
-  return { points, stroke: INK.annotation, weightMm: PEN.annotation };
 }
 
 /**

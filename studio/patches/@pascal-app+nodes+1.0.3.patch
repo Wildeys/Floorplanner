@@ -1,0 +1,16 @@
+diff --git a/node_modules/@pascal-app/nodes/dist/roof/roof-materials.js b/node_modules/@pascal-app/nodes/dist/roof/roof-materials.js
+index b57597d..2c3615b 100644
+--- a/node_modules/@pascal-app/nodes/dist/roof/roof-materials.js
++++ b/node_modules/@pascal-app/nodes/dist/roof/roof-materials.js
+@@ -10,9 +10,9 @@ export function getRoofMaterials(shading = 'rendered', textures = true, colorPre
+         return cached;
+     const materials = textures
+         ? [
+-            // Mirrors getRoofMaterialArray's catalog defaults (wall/trim drywall,
++            // Mirrors getRoofMaterialArray's catalog defaults (wall/trim plaster,
+             // soft-white deck + soffit, terracotta shingle) for the no-parent path.
+-            resolveSlotDefaultMaterial('library:concrete-drywall', shading), // 0: Wall/Trim
++            resolveSlotDefaultMaterial('library:concrete-plaster', shading), // 0: Wall/Trim
+             resolveSlotDefaultMaterial('library:preset-softwhite', shading), // 1: Deck
+             resolveSlotDefaultMaterial('library:preset-softwhite', shading), // 2: Interior
+             resolveSlotDefaultMaterial('library:roof-terracottatiles', shading), // 3: Shingle

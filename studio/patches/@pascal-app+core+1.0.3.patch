@@ -1,0 +1,62 @@
+diff --git a/node_modules/@pascal-app/core/dist/schema/nodes/wall.d.ts b/node_modules/@pascal-app/core/dist/schema/nodes/wall.d.ts
+index f0659b9..2156e6f 100644
+--- a/node_modules/@pascal-app/core/dist/schema/nodes/wall.d.ts
++++ b/node_modules/@pascal-app/core/dist/schema/nodes/wall.d.ts
+@@ -105,16 +105,16 @@ export declare const WALL_FACE_BAND_SOLID_SLOT_DEFAULTS: {
+     readonly top: "library:preset-softwhite";
+ };
+ export declare const WALL_SURFACE_SLOT_DEFAULTS: {
+-    readonly interior: "library:concrete-drywall";
+-    readonly exterior: "library:concrete-drywall";
+-    readonly lowerInterior: "library:concrete-drywall";
+-    readonly middleInterior: "library:concrete-drywall";
+-    readonly upperInterior: "library:concrete-drywall";
+-    readonly topInterior: "library:concrete-drywall";
+-    readonly lowerExterior: "library:concrete-drywall";
+-    readonly middleExterior: "library:concrete-drywall";
+-    readonly upperExterior: "library:concrete-drywall";
+-    readonly topExterior: "library:concrete-drywall";
++    readonly interior: "library:concrete-plaster";
++    readonly exterior: "library:concrete-plaster";
++    readonly lowerInterior: "library:concrete-plaster";
++    readonly middleInterior: "library:concrete-plaster";
++    readonly upperInterior: "library:concrete-plaster";
++    readonly topInterior: "library:concrete-plaster";
++    readonly lowerExterior: "library:concrete-plaster";
++    readonly middleExterior: "library:concrete-plaster";
++    readonly upperExterior: "library:concrete-plaster";
++    readonly topExterior: "library:concrete-plaster";
+     readonly skirtingInterior: "library:preset-softwhite";
+     readonly skirtingExterior: "library:preset-softwhite";
+     readonly crownInterior: "library:preset-white";
+diff --git a/node_modules/@pascal-app/core/dist/schema/nodes/wall.js b/node_modules/@pascal-app/core/dist/schema/nodes/wall.js
+index f25651c..859bb5b 100644
+--- a/node_modules/@pascal-app/core/dist/schema/nodes/wall.js
++++ b/node_modules/@pascal-app/core/dist/schema/nodes/wall.js
+@@ -93,16 +93,16 @@ export const WALL_FACE_BAND_SOLID_SLOT_DEFAULTS = {
+     top: 'library:preset-softwhite',
+ };
+ export const WALL_SURFACE_SLOT_DEFAULTS = {
+-    interior: 'library:concrete-drywall',
+-    exterior: 'library:concrete-drywall',
+-    lowerInterior: 'library:concrete-drywall',
+-    middleInterior: 'library:concrete-drywall',
+-    upperInterior: 'library:concrete-drywall',
+-    topInterior: 'library:concrete-drywall',
+-    lowerExterior: 'library:concrete-drywall',
+-    middleExterior: 'library:concrete-drywall',
+-    upperExterior: 'library:concrete-drywall',
+-    topExterior: 'library:concrete-drywall',
++    interior: 'library:concrete-plaster',
++    exterior: 'library:concrete-plaster',
++    lowerInterior: 'library:concrete-plaster',
++    middleInterior: 'library:concrete-plaster',
++    upperInterior: 'library:concrete-plaster',
++    topInterior: 'library:concrete-plaster',
++    lowerExterior: 'library:concrete-plaster',
++    middleExterior: 'library:concrete-plaster',
++    upperExterior: 'library:concrete-plaster',
++    topExterior: 'library:concrete-plaster',
+     skirtingInterior: WALL_SKIRTING_SLOT_DEFAULT,
+     skirtingExterior: WALL_SKIRTING_SLOT_DEFAULT,
+     crownInterior: WALL_CROWN_SLOT_DEFAULT,

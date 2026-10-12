@@ -4,16 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Editor, useEditor, type SaveStatus } from "@pascal-app/editor";
 import { loadPlugin } from "@pascal-app/core/registry";
 import { builtinPlugin } from "@pascal-app/nodes";
-import { useScene } from "@pascal-app/core";
-
 import { FirstRunHint } from "@/components/studio/first-run-hint.tsx";
 import { FurnitureCatalog } from "@/components/studio/furniture-catalog.tsx";
 import { MobileNotice } from "@/components/studio/mobile-notice.tsx";
 import { SheetStrip } from "@/components/studio/sheet-strip.tsx";
 import { ToolRail } from "@/components/studio/tool-rail.tsx";
 import { TopBar } from "@/components/studio/top-bar.tsx";
-import { TraceCard } from "@/components/studio/trace-card.tsx";
 import { ViewControls } from "@/components/studio/view-controls.tsx";
+import { installFurniturePlanSymbols } from "@/lib/furniture/install-floorplan.ts";
 import { useTrackpadNavigation } from "@/components/studio/use-trackpad-navigation.ts";
 import { useDrawingSetPreview } from "@/components/use-drawing-set-preview.ts";
 import type { ProjectMetadata } from "@/lib/sheets/jurisdiction.ts";
@@ -85,16 +83,6 @@ function useInitialSplitView(width: number | null) {
   }, [width]);
 }
 
-/** How many storeys currently carry geometry, for the sheet strip's tiles. */
-function useLevelCount(): number {
-  return useScene(
-    (state) =>
-      Object.values(state.nodes as Record<string, { type?: string }>).filter(
-        (node) => node.type === "level",
-      ).length,
-  );
-}
-
 export default function StudioShell() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -110,13 +98,12 @@ export default function StudioShell() {
 
   const project = useMemo(() => PROJECT, []);
   const preview = useDrawingSetPreview(project);
-  // Read unconditionally: hooks must not sit inside the edit / view-only branch.
-  const levelCount = useLevelCount();
 
   useEffect(() => {
     let cancelled = false;
     ensureBuiltinPlugin().then(
       () => {
+        installFurniturePlanSymbols();
         if (!cancelled) setReady(true);
       },
       (cause: unknown) => {
@@ -220,12 +207,9 @@ export default function StudioShell() {
 
       <div className="pointer-events-none relative z-20 flex gap-3 p-4">
         {canEdit ? (
-          <>
-            <div className="min-w-0 flex-1">
-              <SheetStrip preview={preview} levelCount={levelCount} />
-            </div>
-            <TraceCard />
-          </>
+          <div className="min-w-0 flex-1">
+            <SheetStrip preview={preview} />
+          </div>
         ) : (
           <MobileNotice />
         )}
